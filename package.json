@@ -1,0 +1,29 @@
+{
+  "name": "ai-internet-search",
+  "version": "0.1.0",
+  "description": "Internet research for AI agents that is defensible, not just cheap. Ranks sources by credibility instead of counting them, shows disagreement instead of averaging it, and says what it could not establish.",
+  "bin": {
+    "ai-internet-search": "bin/ai-internet-search.js"
+  },
+  "scripts": {
+    "test": "node tests/run.js"
+  },
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai", "agent", "research", "search", "cli", "claude", "codex", "gemini",
+    "token-efficient", "axi", "web-search"
+  ],
+  "license": "MIT",
+  "author": "Ram Christopher Baarde",
+  "repository": { "type": "git", "url": "git+https://github.com/rambaarde/ai-internet-search.git" },
+  "homepage": "https://github.com/rambaarde/ai-internet-search#readme",
+  "bugs": { "url": "https://github.com/rambaarde/ai-internet-search/issues" }
+}

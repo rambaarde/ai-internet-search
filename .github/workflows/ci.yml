@@ -1,0 +1,31 @@
+name: ci
+on:
+  push: { branches: [main, develop] }
+  pull_request:
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node }}' }
+      - run: npm test
+  no-dependencies:
+    # The zero-dependency promise is load-bearing: it is why this installs with
+    # one command and runs with no account. Asserted, not remembered.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          node -e '
+            const p = require("./package.json");
+            for (const f of ["dependencies","optionalDependencies","peerDependencies"]) {
+              const n = Object.keys(p[f] || {}).length;
+              if (n) { console.error(`REFUSING: ${n} ${f} present`); process.exit(1); }
+            }
+            console.log("ok: 0 runtime dependencies");
+          '
