@@ -10,24 +10,32 @@ npx ai-internet-search "what is a connection pool"
 ```
 
 ```
-question: what is a connection pool
-query: connection pool
-providers: hackernews,wikipedia
+certainty: moderate — a primary source, but only one
 
-sources[3]{tier,host,why,title}:
-  1,github.com,source code or changelog,About Database Connection Pool Sizing
-  3,pgdog.dev,unclassified,Why we built yet another Postgres connection pooler
-  3,sudhir.io,unclassified,Understanding Connections and Pools
+claims[5]{tier,host,claim}:
+  1,github.com,Your little 4-Core i7 server with one hard disk should be running a connection pool of:
+  1,github.com,Reducing the connection pool size alone decreased response times from ~100ms to ~2ms.
+  3,pgdog.dev,One of its features is connection pooling  which allows many clients to share a database.
+  3,sudhir.io,A pool is an object that maintains a set of connections internally.
 
-read_next[3]{url}:
-  https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing
-  https://pgdog.dev/blog/why-yet-another-connection-pooler
-  https://sudhir.io/understanding-connections-pools/
+conflicts[1]:
+  figures differ
+    tier 1  postgresql.org: set the pool to around 10 connections for this workload
+    tier 4  top10devblogs.com: always set the pool to 100 connections
+    prefer: postgresql.org (tier 1, more authoritative)
 
-triaged: 10 found, 3 worth opening, 7 skipped before fetching
+could_not_establish:
+  nothing read addressed: pgbouncer
+
+sources[3]{tier,host,why,url}:
+  1,github.com,source code or changelog,https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing
+  3,pgdog.dev,unclassified,https://pgdog.dev/blog/why-yet-another-connection-pooler
+  3,sudhir.io,unclassified,https://sudhir.io/understanding-connections-pools/
+
+triaged: 10 found, 3 opened, 7 skipped before fetching (323kb read → 9 claims)
 ```
 
-No API key. No account. Zero dependencies. ~200 tokens.
+No API key. No account. Zero dependencies.
 
 ## The problem
 
@@ -71,16 +79,30 @@ one site say one thing five times.
 the accuracy mechanism and the largest token saving. You are not trading
 correctness for cost — the same action buys both.
 
-## Rules for the agent reading the output
+## It does the rigor, it does not just recommend it
 
-Printed with every answer, because they are the point:
+**Conflicts are found and placed.** Models are documented to detect
+disagreement but fail to *localise* it, so the tool localises it: both claims,
+both tiers, and which source is more authoritative. Never averaged into one
+confident sentence that silently picks a side.
 
-- **A tier-1 source outranks any number of tier-3+ ones.** Never resolve a
-  disagreement by counting.
-- **When sources disagree, report both and name which is which.** Never average
-  them into one confident paragraph that silently picks a side. Models are
-  documented to be poor at localising conflict, so localise it for them.
-- **Say what you could not establish.** An honest gap beats a fluent guess.
+**Certainty is graded, never voted on.** After
+[GRADE](https://www.cdc.gov/acip-grade-handbook/hcp/chapter-6-systemic-review-overview/index.html):
+
+| grade | when |
+|---|---|
+| `high` | a primary source, independently corroborated |
+| `moderate` | a primary source, but only one |
+| `low` | no primary source read, or sources disagree |
+| `very low` | aggregator-tier only |
+| `none` | nothing could be read |
+
+A live disagreement always downgrades. An answer with a known contradiction in
+it is not high certainty whatever its sources.
+
+**Gaps are stated.** Terms nothing addressed, and sources that could not be
+read with the reason — `http 403`, `timed out`, `too large`. "I could not open
+this" and "I read it and it said nothing" are different answers.
 
 ## Empty results are answers
 
@@ -108,6 +130,27 @@ ai-internet-search --json "<question>"       JSON instead of TOON
 | `0` | success, including "found nothing" |
 | `1` | error |
 | `2` | unknown flag or bad usage |
+
+## Works in the terminal and in GUI clients
+
+Terminal agents call the CLI. GUI clients — Claude Desktop, the Cursor app —
+have no shell, so an MCP server ships alongside:
+
+```json
+{
+  "mcpServers": {
+    "ai-internet-search": { "command": "ai-internet-search-mcp" }
+  }
+}
+```
+
+Two tools, `research` and `plan_research`. The MCP `instructions` field carries
+the rules with the result, because a result whose conflicts get averaged back
+into one confident paragraph has lost everything the tool was for.
+
+**Do not register the MCP server for a terminal agent.** It has a shell; MCP
+would add a layer that can only go out of date, and AXI measures MCP at 185k
+tokens per task against 79k for a CLI.
 
 ## Built for agents to call
 

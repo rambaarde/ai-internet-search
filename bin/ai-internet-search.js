@@ -20,6 +20,8 @@
 
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { triage } = require('../lib/sources');
+const { readSources } = require('../lib/extract');
+const { findConflicts, grade, gaps } = require('../lib/assess');
 
 const VERSION = require('../package.json').version;
 
@@ -93,13 +95,22 @@ async function main() {
   }
 
   const query = keywords(opts.question);
+  const terms = query.split(' ').filter(Boolean);
   const found = await findCandidates(opts.question);
-  const opened = triage(found.candidates, { limit: opts.limit, perHost: opts.perHost });
+  const chosen = triage(found.candidates, { limit: opts.limit, perHost: opts.perHost });
+
+  // --plan stops before any page is fetched. Useful for seeing what would be
+  // read, and for costing a question before paying for it.
+  const opened = opts.plan ? chosen.map((c) => ({ ...c, read: false, reason: 'not fetched (--plan)', claims: [] }))
+                           : await readSources(chosen, terms);
+  const conflicts = opts.plan ? [] : findConflicts(opened);
+  const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
+  const missing = gaps(opened, terms);
 
   if (opts.json) {
     return out(JSON.stringify({ question: opts.question, query, kinds: kindsFor(opts.question),
       providers: found.providers, failed: found.failed, candidates: found.candidates.length,
-      sources: opened }, null, 2), opened.length ? 0 : 0);
+      certainty, conflicts, gaps: missing, sources: opened }, null, 2), 0);
   }
 
   const lines = [];
@@ -122,16 +133,49 @@ async function main() {
     return out(lines.join('\n'), 0);
   }
 
-  lines.push(toon('sources', ['tier', 'host', 'why', 'title'], opened));
+  // Certainty first: it changes how everything below should be read.
+  lines.push(`certainty: ${certainty.level} — ${certainty.why}`);
   lines.push('');
-  lines.push(`read_next[${opened.length}]{url}:`);
-  for (const c of opened) lines.push('  ' + c.url);
+
+  const claimRows = [];
+  for (const s of opened) {
+    for (const c of s.claims) claimRows.push({ tier: s.tier, host: s.host, claim: c.text });
+  }
+  lines.push(toon('claims', ['tier', 'host', 'claim'], claimRows));
   lines.push('');
-  lines.push(`triaged: ${found.candidates.length} found, ${opened.length} worth opening, ${found.candidates.length - opened.length} skipped before fetching`);
+
+  // Localised, never averaged. Models are documented to detect conflict but
+  // fail to place it, so it is placed for them.
+  if (conflicts.length) {
+    lines.push(`conflicts[${conflicts.length}]:`);
+    for (const c of conflicts) {
+      lines.push(`  ${c.kind}`);
+      lines.push(`    tier ${c.a.tier}  ${c.a.host}: ${c.a.text}`);
+      lines.push(`    tier ${c.b.tier}  ${c.b.host}: ${c.b.text}`);
+      lines.push(`    prefer: ${c.prefer ? `${c.prefer.host} (tier ${c.prefer.tier}, more authoritative)` : 'neither — same tier, both stand'}`);
+    }
+    lines.push('');
+  }
+
+  const unread = opened.filter((s) => !s.read);
+  if (unread.length || missing.missingTerms.length) {
+    lines.push('could_not_establish:');
+    for (const u of unread) lines.push(`  ${u.host} — ${u.reason}`);
+    if (missing.missingTerms.length) {
+      lines.push(`  nothing read addressed: ${missing.missingTerms.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(`sources[${opened.length}]{tier,host,why,url}:`);
+  for (const c of opened) lines.push(`  ${c.tier},${c.host},${c.why},${c.url}`);
+  lines.push('');
+  const kb = Math.round(opened.reduce((n, s) => n + (s.bytes || 0), 0) / 1024);
+  lines.push(`triaged: ${found.candidates.length} found, ${opened.length} opened, ${found.candidates.length - opened.length} skipped before fetching${kb ? ` (${kb}kb read → ${claimRows.length} claims)` : ''}`);
   lines.push('');
   lines.push('help[2]:');
-  lines.push('  open the urls above in tier order; a tier-1 source outranks any number of tier-3+ ones');
-  lines.push('  when sources disagree, report both and name which is which — never average them');
+  lines.push('  a tier-1 source outranks any number of tier-3+ ones; never settle a disagreement by counting');
+  lines.push('  ai-internet-search --limit 5 "<question>"   # read more sources');
   return out(lines.join('\n'), 0);
 }
 

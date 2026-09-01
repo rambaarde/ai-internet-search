@@ -97,6 +97,83 @@ is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a 
   is(r.out.trim(), require('../package.json').version, '--version prints the version');
 }
 
+// --- extraction -------------------------------------------------------------
+{
+  const { htmlToText, sentences, scoreSentence } = require('../lib/extract');
+  // Script bodies must go before tags, or a 1MB SPA becomes "850k chars of text".
+  hasnt(htmlToText('<script>var x = "hello world padding padding";</script><p>real text</p>'), 'hello world',
+        'script bodies are removed, not just their tags');
+  is(htmlToText('<p>it&#x27;s &amp; it&#39;s</p>'), "it's & it's", 'numeric and named entities are decoded');
+
+  // A page title is not a claim: it asserts nothing actionable.
+  const kept = sentences('GitHub - supabase/supavisor: A cloud-native pooler thing here\n' +
+    'Supavisor is a scalable cloud-native Postgres connection pooler that handles many clients.');
+  is(kept.length, 1, 'a page title is not kept as a claim');
+  has(kept[0], 'Supavisor is a scalable', 'the actual sentence survives');
+
+  const terms = ['connection', 'pool'];
+  const withNumber = scoreSentence('Set the connection pool to 10 for this workload.', terms);
+  const without = scoreSentence('The connection pool is a thing that exists somewhere.', terms);
+  ok(withNumber > without ? 'a sentence stating a figure outranks a vague one' : 'x');
+}
+
+// --- conflict detection and grading -----------------------------------------
+// The reason the tool exists. Models "favor the majority viewpoint even when
+// opposing evidence is more credible", so certainty must never be a vote.
+{
+  const { findConflicts, grade } = require('../lib/assess');
+  const disagree = [
+    { tier: 1, host: 'postgresql.org', url: 'u1', read: true,
+      claims: [{ text: 'You should set the connection pool to around 10 connections for this workload.' }] },
+    { tier: 4, host: 'top10devblogs.com', url: 'u2', read: true,
+      claims: [{ text: 'You should always set the connection pool to 100 connections for any workload.' }] },
+  ];
+  const c = findConflicts(disagree);
+  is(c.length, 1, 'a numeric disagreement between two hosts is detected');
+  is(c[0].kind, 'figures differ', 'the kind of disagreement is named');
+  is(c[0].prefer.host, 'postgresql.org', 'the more authoritative source is preferred, not the more numerous');
+
+  // Same host disagreeing with itself is not news; near-identical claims are not conflict.
+  is(findConflicts([{ tier: 3, host: 'a.com', url: 'u', read: true,
+      claims: [{ text: 'Use 10 connections in the pool here.' }, { text: 'Use 100 connections in the pool here.' }] }]).length,
+     0, 'a single source disagreeing with itself is not reported as a conflict');
+
+  is(grade(disagree, c).level, 'low', 'a live disagreement downgrades certainty');
+  is(grade([{ tier: 1, host: 'a', read: true, claims: [{ text: 'x' }] }], []).level, 'moderate',
+     'a single primary source is moderate, not high');
+  is(grade([{ tier: 1, host: 'a', read: true, claims: [{ text: 'x' }] },
+            { tier: 2, host: 'b', read: true, claims: [{ text: 'y' }] }], []).level, 'high',
+     'a primary source corroborated independently is high');
+  is(grade([{ tier: 4, host: 'a', read: true, claims: [{ text: 'x' }] }], []).level, 'very low',
+     'aggregator-only evidence is very low');
+  is(grade([{ tier: 1, host: 'a', read: false, claims: [] }], []).level, 'none',
+     'nothing readable is graded none, not assumed');
+}
+
+// --- MCP server -------------------------------------------------------------
+{
+  const MCP = join(__dirname, '..', 'bin', 'ai-internet-search-mcp.js');
+  const input = [
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}',
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+    '{"jsonrpc":"2.0","id":3,"method":"bogus"}',
+  ].join('\n') + '\n';
+  let raw = '';
+  try {
+    raw = execFileSync(process.execPath, [MCP], { input, encoding: 'utf8', timeout: 20000 });
+  } catch (e) { raw = e.stdout || ''; }
+  const msgs = raw.trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
+  const byId = Object.fromEntries(msgs.filter(Boolean).map((m) => [m.id, m]));
+  is(msgs.length, 3, 'MCP answers every request and never answers a notification');
+  is(byId[1]?.result?.serverInfo?.name, 'ai-internet-search', 'MCP identifies itself');
+  has(byId[1]?.result?.instructions || '', 'settle a disagreement by counting',
+      'MCP instructions carry the rule the tool exists for');
+  is((byId[2]?.result?.tools || []).map((t) => t.name).sort().join(','), 'plan_research,research',
+     'MCP advertises both tools');
+  has(byId[3]?.error?.message || '', 'method not found', 'MCP rejects an unknown method as a JSON-RPC error');
+}
+
 // --- network-dependent ------------------------------------------------------
 (async () => {
   let online = true;
