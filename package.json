@@ -1,6 +1,6 @@
 {
   "name": "ai-internet-search",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Internet research for AI agents that is defensible, not just cheap. Ranks sources by credibility instead of counting them, shows disagreement instead of averaging it, and says what it could not establish.",
   "bin": {
     "ai-internet-search": "bin/ai-internet-search.js",
