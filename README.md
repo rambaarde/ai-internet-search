@@ -165,10 +165,17 @@ Follows [AXI](https://axi.md/) conventions for agent-ergonomic CLIs:
 
 ## Cost
 
+Measured, not estimated:
+
 | | tokens |
 |---|---|
-| an answer with three sources | **~200** |
-| an empty result | **~100** |
+| a full answer — claims, conflicts, certainty, sources | **~350–500** |
+| `--plan`, nothing fetched | **~215** |
+| an empty result | **~95** |
+
+That is the *output*. The saving that matters is upstream: on a real question
+it read 323 kb of pages and emitted 9 claims, and skipped 7 of 10 candidates
+without fetching them at all.
 
 For comparison, [Anthropic measured](https://www.anthropic.com/engineering/multi-agent-research-system)
 agents at ~4× a chat turn and multi-agent research at ~15×. This is a single
