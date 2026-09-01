@@ -116,6 +116,29 @@ could_not_establish: no source above the noise floor answered this.
 Silence is indistinguishable from a crash, and a confident guess is worse than
 either. Finding nothing exits `0` — it is an answer, not a failure.
 
+## It finds the figures, it does not describe them
+
+An agent reads plain text. A benchmark chart, an architecture diagram, or a
+latency graph is exactly where the load-bearing evidence usually lives, and it
+is invisible to text extraction.
+
+So charts and diagrams are located and returned as pointers, with the sentence
+that introduced them:
+
+```
+visuals[2]{tier,host,why,url}:
+  1,github.com,chart or benchmark,https://github.com/.../pool-size-vs-latency.png
+  2,arxiv.org,figure,https://arxiv.org/.../fig3-throughput.png
+```
+
+Chrome — avatars, icons, logos, spacers, tracking pixels — is filtered out.
+
+**It does not claim to have read them.** The tool has no vision model; it says
+where a figure is and what the page said about it, and a multimodal agent can
+fetch it. Alt text was tried first and abandoned after measurement: Wikipedia's
+"descriptive" alt attributes turned out to be *"The Free Encyclopedia"* and
+*"Wikimedia Foundation"*. Alt text describes the site, not the science.
+
 ## Usage
 
 ```sh
@@ -123,6 +146,7 @@ ai-internet-search "<question>"              research a question
 ai-internet-search --plan "<question>"       triage only, fetch nothing
 ai-internet-search --limit 5 "<question>"    open more sources
 ai-internet-search --json "<question>"       JSON instead of TOON
+ai-internet-search --report "<question>"     also write a standalone HTML report
 ```
 
 | exit | meaning |
@@ -143,6 +167,18 @@ have no shell, so an MCP server ships alongside:
   }
 }
 ```
+
+Clients that connect by **URL** rather than by spawning a command — browser-
+resident agents, anything remote — need an HTTP transport instead:
+
+```sh
+ai-internet-search-mcp --http 8787   # streamable-http, 127.0.0.1 only
+```
+
+Same handler, same tools, **the same bytes on the wire**: the handshake plus
+both tool schemas measures 415 tokens over either transport. A transport choice
+costs nothing in tokens, it only changes who can reach the server. It binds to
+loopback and nothing else.
 
 Two tools, `research` and `plan_research`. The MCP `instructions` field carries
 the rules with the result, because a result whose conflicts get averaged back
