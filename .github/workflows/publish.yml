@@ -1,0 +1,141 @@
+# Conventional commits on main accumulate into a Release PR that maintains
+# CHANGELOG.md and the package version. Merging that PR cuts the tag and the
+# GitHub Release, and publishes to npm in the SAME run — a GITHUB_TOKEN-created
+# release event cannot trigger a separate workflow, so `on: release: published`
+# would never fire.
+#
+# main only receives commits via a develop -> main PR; that merge is what
+# cuts a release here.
+#
+# Both jobs live in this one file on purpose. npm's trusted publisher is pinned
+# to the workflow filename, and for OIDC npm reads the TOP-LEVEL workflow of
+# the run. Splitting the publish half into its own file — even called via
+# `uses:` — would make npm see the caller instead and refuse the publish.
+#
+# There is deliberately no NPM_TOKEN. Trusted Publishing mints a short-lived
+# OIDC token for this exact workflow in this exact repository, so nothing
+# long-lived exists to leak or rotate.
+#
+# One-time setup on npmjs.com, which cannot be done from here:
+#   ai-internet-search → Settings → Trusted Publisher → GitHub Actions
+#   organization: rambaarde   repository: ai-internet-search   workflow: publish.yml
+#   Allow npm publish: checked (this workflow publishes directly, not staged)
+#
+# That trust is pinned to the REPOSITORY NAME. Renaming rambaarde/ai-internet-search
+# breaks publishing until the trusted publisher is updated to match — and so
+# does package.json's repository.url, which provenance checks below.
+name: publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: Publish the current package.json version even when release-please did not create a new release.
+        required: false
+        default: "false"
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.force_publish == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # to mint the OIDC token npm verifies
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing needs npm >= 11.5.1 to perform the OIDC exchange.
+      # Node 22 bundles an older npm, which would just publish with whatever
+      # token it can find — and with none configured, the registry answers a
+      # 404 on the PUT that reads like a missing package rather than a
+      # missing credential.
+      - run: npm install -g npm@latest
+
+      - run: npm test
+
+      # A proxy for "the package ships" is not the same as the package
+      # shipping. Assert on the actual tarball: every bin entry must be in
+      # it, and nothing that only belongs in the repository may be.
+      - name: assert the tarball before it leaves
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e '
+            const raw = require("/tmp/pack.json");
+            const meta = Array.isArray(raw) ? raw[0] : Object.values(raw)[0];
+            if (!meta || !Array.isArray(meta.files)) {
+              console.error("unrecognised npm pack --json shape: " + JSON.stringify(Object.keys(raw)));
+              process.exit(1);
+            }
+            const files = meta.files.map((f) => f.path);
+            const fail = (m) => { console.error("REFUSING TO PUBLISH: " + m); process.exit(1); };
+            const pkg = require("./package.json");
+            for (const [name, path] of Object.entries(pkg.bin ?? {})) {
+              if (!files.includes(path)) fail(`${path} (bin "${name}") is not in the tarball`);
+            }
+            const junk = files.filter((f) =>
+              f.startsWith("tests/") || f.startsWith(".github/") ||
+              f === "release-please-config.json" || f === ".release-please-manifest.json"
+            );
+            if (junk.length) fail("must not publish: " + junk.join(", "));
+            for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+              if (Object.keys(pkg[field] ?? {}).length) fail(`a ${field} entry appeared`);
+            }
+            // Provenance is checked by the registry only AFTER the bundle is
+            // signed and uploaded, and it reports a mismatch as a 422 that
+            // reads like an auth problem. Asking here turns that into a
+            // plain sentence, before anything is signed.
+            const want = `github.com/${process.env.GITHUB_REPOSITORY}`;
+            const url = pkg.repository?.url ?? pkg.repository ?? "";
+            if (!url.includes(want)) {
+              fail(`repository.url is "${url}" — provenance needs it to name ${want}`);
+            }
+            console.log(`ok: ${meta.entryCount} files, ${(meta.size / 1024).toFixed(1)}kb, 0 deps`);
+          '
+
+      - name: publish
+        run: npm publish --provenance
+
+      - name: verify it is actually installable
+        run: |
+          VERSION="$(node -p 'require("./package.json").version')"
+          found=0
+          for i in $(seq 1 24); do
+            npm view "ai-internet-search@$VERSION" version >/dev/null 2>&1 && { found=1; break; }
+            echo "waiting for the registry to serve $VERSION ($i/24)"; sleep 20
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "REFUSING: ai-internet-search@$VERSION never became available on the registry after ~8 minutes" >&2
+            exit 1
+          fi
+          WORK="$(mktemp -d)"
+          cd "$WORK"
+          npm init -y >/dev/null
+          npm install "ai-internet-search@$VERSION" --prefer-online
+          node ./node_modules/.bin/ai-internet-search --version
+          echo "ok: ai-internet-search@$VERSION installs and runs"

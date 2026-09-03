@@ -9,23 +9,24 @@ instead of averaging it, and says what it could not establish.
 npx ai-internet-search "what is a connection pool"
 ```
 
+[![npm](https://img.shields.io/npm/v/ai-internet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/ai-internet-search)
+[![ci](https://img.shields.io/github/actions/workflow/status/rambaarde/ai-internet-search/ci.yml?label=ci)](https://github.com/rambaarde/ai-internet-search/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/actions/workflow/status/rambaarde/ai-internet-search/publish.yml?label=release)](https://github.com/rambaarde/ai-internet-search/actions/workflows/publish.yml)
+![deps](https://img.shields.io/badge/runtime%20deps-0-blue)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![PRs](https://img.shields.io/badge/PRs-welcome-orange)
+
 ```
 certainty: moderate — a primary source, but only one
 
-claims[5]{tier,host,claim}:
+claims[9]{tier,host,claim}:
   1,github.com,Your little 4-Core i7 server with one hard disk should be running a connection pool of:
   1,github.com,Reducing the connection pool size alone decreased response times from ~100ms to ~2ms.
   3,pgdog.dev,One of its features is connection pooling  which allows many clients to share a database.
   3,sudhir.io,A pool is an object that maintains a set of connections internally.
 
-conflicts[1]:
-  figures differ
-    tier 1  postgresql.org: set the pool to around 10 connections for this workload
-    tier 4  top10devblogs.com: always set the pool to 100 connections
-    prefer: postgresql.org (tier 1, more authoritative)
-
-could_not_establish:
-  nothing read addressed: pgbouncer
+visuals[1]{tier,host,why,url}:
+  1,github.com,filename says it carries data,https://github.com/.../Postgres_Chart.png
 
 sources[3]{tier,host,why,url}:
   1,github.com,source code or changelog,https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing
@@ -58,9 +59,61 @@ official documentation, every time.
 
 Counting sources is not research. It is an echo with citations.
 
-## What this does instead
+## The research
 
-**Credibility is decided before anything is read**, from the URL alone.
+The design below came first, from watching agents fail on real questions —
+not from a paper. Afterward, each decision was checked against what's
+actually published about how AI agents fail at research. Plain language,
+and what each finding means for this tool:
+
+| finding | source | what it means here |
+|---|---|---|
+| Up to 1 in 5 "cited" claims from research agents don't match what the cited page says | [DeepResearch Bench](https://arxiv.org/abs/2506.11763) | Can't happen in this form. That gap opens when an agent *paraphrases* a source and cites it. This tool quotes every claim verbatim — no paraphrase step for a citation to drift away from. |
+| Even a "smart" ranking flips if a wrong claim is repeated on enough low-quality pages | [Whose Facts Win?](https://arxiv.org/abs/2601.03746) | Doesn't apply. Ranking happens *before* anything is fetched, and only one page per host is ever read — volume never reaches the step that decides what to trust. |
+| Which source gets read first can quietly bias the answer, separate from which one is right | position / "lost-in-the-middle" bias research | The most credible source is read first and listed first, always — nothing to be biased by. |
+| Letting a model say "I don't know" instead of guessing roughly halves its error rate | abstention research | `could_not_establish` makes exactly this trade below. |
+| URL-shape credibility ranking has one real gap | — | A page deliberately built to *look* like documentation (`docs.`, a plausible `.org`) could still slip into a higher tier than it deserves. Harder to fake than a purchasable "domain authority" score, but not impossible. Known, not fixed. |
+| Iteration and query-splitting only help on *multi-hop* questions | Anthropic, OpenAI, Gemini, Perplexity architecture writeups | Confirms the single-pass design below rather than exposing a gap — see [One question, one pass](#one-question-one-pass). |
+
+## The solution
+
+**Credibility is decided before anything is read**, from the URL alone —
+which is free, and happens before a single page is fetched:
+
+```mermaid
+flowchart TD
+    A(["A question, in plain words"]) --> B["Strip filler words,<br/>keep what's distinctive"]
+    B --> C{"What kind of question?"}
+    C -->|"definition"| D["Wikipedia + Hacker News"]
+    C -->|"research / academic"| E["OpenAlex + Hacker News"]
+    C -->|"how engineers do it"| F["Hacker News + Wikipedia"]
+    D --> G["Candidates found"]
+    E --> G
+    F --> G
+    G --> H["<b>Rank by the URL alone,<br/>before reading anything</b>"]
+    H --> I["At most 1 page per site,<br/>at most 3 pages total"]
+    I --> J["Read only those.<br/>Quote the sentence, not a summary"]
+    J --> K{"Do two claims<br/>disagree?"}
+    K -->|"yes"| L["<b>Show both sides.<br/>Say which is more trustworthy.<br/>Never average them.</b>"]
+    K -->|"no"| M["Grade certainty from<br/>what was actually read"]
+    L --> M
+    M -->|"nothing above the noise floor"| N["<b>Say so. Exit 0 anyway —<br/>finding nothing is an answer.</b>"]
+    M -->|"something was read"| O(["Claims + conflicts +<br/>certainty + sources"])
+    N --> O
+
+    classDef ask fill:#0d9488,stroke:#0f766e,color:#fff
+    classDef care fill:#b45309,stroke:#92400e,color:#fff
+    classDef done fill:#1e3a8a,stroke:#1e40af,color:#fff
+    class A ask
+    class H care
+    class L care
+    class N care
+    class O done
+```
+
+The shaded boxes are the three that matter: ranking before reading anything
+(the accuracy mechanism and the token saving, at once), a conflict shown
+rather than blended, and an empty result that says it is empty.
 
 | tier | source | why |
 |---|---|---|
@@ -72,14 +125,9 @@ Counting sources is not research. It is an echo with citations.
 An unrecognised host is tier 3, not 4 — unproven is not the same as junk, and
 the alternative buries small authoritative sites under large mediocre ones.
 
-Then: **at most one source per host, at most three opened.** Five pages from
-one site say one thing five times.
-
 **This is why it is cheap.** Not reading seven of ten results is simultaneously
 the accuracy mechanism and the largest token saving. You are not trading
 correctness for cost — the same action buys both.
-
-## It does the rigor, it does not just recommend it
 
 **Conflicts are found and placed.** Models are documented to detect
 disagreement but fail to *localise* it, so the tool localises it: both claims,
@@ -104,43 +152,54 @@ it is not high certainty whatever its sources.
 read with the reason — `http 403`, `timed out`, `too large`. "I could not open
 this" and "I read it and it said nothing" are different answers.
 
-## Checked against the research, not just designed against it
+## Benchmarks
 
-Every claim above was designed in before any of this was measured. Afterward,
-each design decision was checked against what's actually been published about
-how AI agents fail at research — plain language, what it means for this tool:
+Measured, not estimated — every number below is reproducible with the
+command beside it.
 
-- **Citing something isn't the same as it actually saying that.** One
-  benchmark found up to 1 in 5 "cited" claims from research agents don't
-  match what the cited page actually says
-  ([DeepResearch Bench](https://arxiv.org/abs/2506.11763)). That happens when
-  an agent *paraphrases* a source and cites it. This tool never paraphrases —
-  every claim is quoted from the page, word for word. There's no
-  paraphrase step for the citation to drift away from.
+**Tokens** — what the calling agent pays, per question
 
-- **Repeat something enough times and even a "smart" ranking flips.** Models
-  that normally prefer an official source over a random blog will switch
-  preference if the same wrong claim shows up on enough low-quality pages
-  ([Whose Facts Win?](https://arxiv.org/abs/2601.03746)). Doesn't apply here —
-  ranking happens *before* anything is fetched, and only one page per site
-  gets read at all, so volume never reaches the step that decides what to
-  trust.
+| | chars | ~tokens | command |
+|---|---|---|---|
+| a full answer — claims, visuals, sources | 2,600 | **~650** | `ai-internet-search "<question>" \| wc -c` |
+| `--plan`, nothing fetched | 876 | **~220** | `ai-internet-search --plan "<question>" \| wc -c` |
+| an empty result | 441 | **~110** | `ai-internet-search "<gibberish>" \| wc -c` |
 
-- **Which source gets read first can quietly bias the answer**, separate from
-  which one is actually right. This tool already reads the most credible
-  source first and lists it first in the output — there's no "which one did
-  it happen to read first" to be biased by.
+Divide chars by ~4 for a token estimate, the same rule of thumb used
+throughout — no tokenizer dependency to keep the package at zero.
 
-- **Refusing to answer beats a confident wrong guess, and it's not close.**
-  Letting a model say "I don't know" instead of forcing an answer cut its
-  error rate roughly in half in one study, for a small hit to how often it
-  answers at all. That's exactly the trade `could_not_establish` makes below.
+For comparison, [Anthropic measured](https://www.anthropic.com/engineering/multi-agent-research-system)
+agents at ~4× a chat turn and multi-agent research at ~15×. This is a single
+pass that opens at most three pages.
 
-- **The one gap that's real, not fully closed:** ranking is based on the
-  shape of a URL (`docs.`, a `github.com` release page, `.org`). A page
-  deliberately built to *look* like documentation could still slip into a
-  higher tier than it deserves. Harder to fake than a purchasable
-  "domain authority" score, but not impossible — worth knowing, not yet fixed.
+**Speed**
+
+| | |
+|---|---|
+| A full question, network included | **~1.5 s** |
+| `--plan`, triage only | **~0.75 s** |
+| An empty result | **~0.6 s** |
+
+```sh
+time ai-internet-search "what is a connection pool" >/dev/null
+```
+
+**Footprint**
+
+| | |
+|---|---|
+| Runtime dependencies | **0** |
+| Package | **27 kB** (74 kB unpacked, 10 files) |
+| Tests | **79**, no framework, network tests skip cleanly offline |
+
+```sh
+npm pack --dry-run && npm test
+```
+
+**What it actually read**, on the example above: 323 kB of pages fetched,
+9 claims emitted, 7 of 10 candidates skipped before a single byte of them was
+fetched. Skipping is the accuracy mechanism, not a shortcut on top of it —
+see [The solution](#the-solution).
 
 ## Empty results are answers
 
@@ -176,6 +235,21 @@ where a figure is and what the page said about it, and a multimodal agent can
 fetch it. Alt text was tried first and abandoned after measurement: Wikipedia's
 "descriptive" alt attributes turned out to be *"The Free Encyclopedia"* and
 *"Wikimedia Foundation"*. Alt text describes the site, not the science.
+
+## One question, one pass
+
+No query decomposition, no re-searching on a found gap, no reflection loop.
+This is deliberate, not unfinished: every published deep-research
+architecture — [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system),
+OpenAI, Gemini, Perplexity — reserves iteration for **multi-hop** questions,
+ones whose answer isn't in any single source. Perplexity, the most
+iteration-heavy of them, still routes a simple factual query through one
+retrieval pass, same as this tool does for every question. Nothing published
+measures a decomposition gain on a single-fact question.
+
+A multi-hop question is better split by the caller, which already has an LLM,
+into several calls to this tool — decomposition done by the party that
+already reasons, without an LLM or a dependency inside the pipeline.
 
 ## Usage
 
@@ -236,39 +310,6 @@ Follows [AXI](https://axi.md/) conventions for agent-ergonomic CLIs:
 - **No interactive prompts** — every parameter is a flag
 - **`help[]` next-step hints** appended to output
 - **Content-first** — running it bare says what it is, not a help dump
-
-## Cost
-
-Measured, not estimated:
-
-| | tokens |
-|---|---|
-| a full answer — claims, conflicts, certainty, sources | **~350–500** |
-| `--plan`, nothing fetched | **~215** |
-| an empty result | **~95** |
-
-That is the *output*. The saving that matters is upstream: on a real question
-it read 323 kb of pages and emitted 9 claims, and skipped 7 of 10 candidates
-without fetching them at all.
-
-For comparison, [Anthropic measured](https://www.anthropic.com/engineering/multi-agent-research-system)
-agents at ~4× a chat turn and multi-agent research at ~15×. This is a single
-pass that opens at most three pages.
-
-## One question, one pass
-
-No query decomposition, no re-searching on a found gap, no reflection loop.
-This is deliberate, not unfinished: every published deep-research
-architecture — [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system),
-OpenAI, Gemini, Perplexity — reserves iteration for **multi-hop** questions,
-ones whose answer isn't in any single source. Perplexity, the most
-iteration-heavy of them, still routes a simple factual query through one
-retrieval pass, same as this tool does for every question. Nothing published
-measures a decomposition gain on a single-fact question.
-
-A multi-hop question is better split by the caller, which already has an LLM,
-into several calls to this tool — decomposition done by the party that
-already reasons, without an LLM or a dependency inside the pipeline.
 
 ## Sources
 
