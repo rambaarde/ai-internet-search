@@ -83,13 +83,8 @@ which is free, and happens before a single page is fetched:
 ```mermaid
 flowchart TD
     A(["A question, in plain words"]) --> B["Strip filler words,<br/>keep what's distinctive"]
-    B --> C{"What kind of question?"}
-    C -->|"definition"| D["Wikipedia + Hacker News"]
-    C -->|"research / academic"| E["OpenAlex + Hacker News"]
-    C -->|"how engineers do it"| F["Hacker News + Wikipedia"]
-    D --> G["Candidates found"]
-    E --> G
-    F --> G
+    B --> C["Pick providers by question type:<br/>definition, research, or engineering"]
+    C --> G["Candidates found"]
     G --> H["<b>Rank by the URL alone,<br/>before reading anything</b>"]
     H --> I["At most 1 page per site,<br/>at most 3 pages total"]
     I --> J["Read only those.<br/>Quote the sentence, not a summary"]
@@ -97,9 +92,8 @@ flowchart TD
     K -->|"yes"| L["<b>Show both sides.<br/>Say which is more trustworthy.<br/>Never average them.</b>"]
     K -->|"no"| M["Grade certainty from<br/>what was actually read"]
     L --> M
-    M -->|"nothing above the noise floor"| N["<b>Say so. Exit 0 anyway —<br/>finding nothing is an answer.</b>"]
+    M -->|"nothing above the noise floor"| N(["<b>Say so. Exit 0 anyway —<br/>finding nothing is an answer.</b>"])
     M -->|"something was read"| O(["Claims + conflicts +<br/>certainty + sources"])
-    N --> O
 
     classDef ask fill:#0d9488,stroke:#0f766e,color:#fff
     classDef care fill:#b45309,stroke:#92400e,color:#fff
@@ -107,8 +101,7 @@ flowchart TD
     class A ask
     class H care
     class L care
-    class N care
-    class O done
+    class N,O done
 ```
 
 The shaded boxes are the three that matter: ranking before reading anything
