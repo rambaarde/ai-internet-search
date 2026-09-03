@@ -6,6 +6,8 @@
  */
 const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
+const { mkdtempSync, rmSync, existsSync, readFileSync } = require('node:fs');
+const { tmpdir } = require('node:os');
 const { gradeSource, triage } = require('../lib/sources');
 const { keywords, looksRelevant, kindsFor } = require('../lib/search');
 
@@ -19,14 +21,28 @@ const is = (a, b, m) => (String(a) === String(b) ? ok(m) : nok(m, `got [${a}] wa
 const has = (s, sub, m) => (String(s).includes(sub) ? ok(m) : nok(m, `missing [${sub}]`));
 const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpected [${sub}]`));
 
-function run(args, expectCode) {
+function run(args, expectCode, opts = {}) {
   try {
-    const out = execFileSync(process.execPath, [BIN, ...args], { encoding: 'utf8' });
+    const out = execFileSync(process.execPath, [BIN, ...args], { encoding: 'utf8', cwd: opts.cwd });
     return { out, code: 0 };
   } catch (e) {
     return { out: (e.stdout || '') + (e.stderr || ''), code: e.status };
   }
 }
+
+// A fresh, throwaway directory for any test that touches the real
+// filesystem (--report writes a file), so a test run never leaves a stray
+// file in the repo and never depends on what's already on disk. Every
+// sandbox created is removed when the suite exits, pass or fail.
+const sandboxes = [];
+function sandbox() {
+  const dir = mkdtempSync(join(tmpdir(), 'ai-internet-search-test-'));
+  sandboxes.push(dir);
+  return dir;
+}
+process.on('exit', () => {
+  for (const dir of sandboxes) rmSync(dir, { recursive: true, force: true });
+});
 
 // --- source tiering ---------------------------------------------------------
 // The mechanism the tool exists for: credibility decided from the URL, before
@@ -320,6 +336,34 @@ function finish() {
     has(e.out, 'could_not_establish', 'an empty result says so explicitly');
     has(e.out, 'sources[0]', 'an empty result still emits a zero-count block');
     is(e.code, 0, 'finding nothing is an answer, not an error');
+
+    // --report writes to the real filesystem. Run it inside a throwaway
+    // sandbox dir, never the repo, so a test run can't leave a stray file
+    // behind or depend on what happens to already be on disk.
+    {
+      const dir = sandbox();
+      const r1 = run(['--report', 'what is a connection pool'], 0, { cwd: dir });
+      is(r1.code, 0, '--report with no path still exits 0');
+      has(r1.out, 'report: ', '--report with no path states where it wrote');
+      const printedPath = (r1.out.match(/^report: (.+)$/m) || [])[1];
+      ok(printedPath && existsSync(printedPath) ? 'the file named in the output actually exists' : 'x');
+      const html = printedPath ? readFileSync(printedPath, 'utf8') : '';
+      has(html, '<!doctype html', 'the default-path report is real HTML, not a stub');
+
+      const r2 = run(['--report=custom.html', 'what is a connection pool'], 0, { cwd: dir });
+      ok(existsSync(join(dir, 'custom.html')) ? 'an explicit --report path is honored exactly' : 'x');
+      has(r2.out, 'custom.html', 'the explicit path is echoed back in the output');
+
+      // The parent directory does not exist -- writeFileSync must throw, and
+      // that failure must degrade the run, not crash it: a report a caller
+      // didn't ask to depend on should never turn success into failure.
+      const badPath = join(dir, 'does-not-exist', 'r.html');
+      const r3 = run([`--report=${badPath}`, 'what is a connection pool'], 0, { cwd: dir });
+      is(r3.code, 0, 'a report that fails to write does not fail the whole search');
+      has(r3.out, 'warning: could not write the report', 'the write failure is reported, not swallowed');
+      hasnt(r3.out, 'report: ', 'no report: line is printed when the write actually failed');
+      has(r3.out, 'sources[', 'the search result itself is unaffected by the report write failing');
+    }
   }
 
   console.log('----');

@@ -52,7 +52,8 @@ flags:
   --limit N       maximum sources to open (default 3)
   --per-host N    maximum sources per host (default 1)
   --json          emit JSON instead of TOON
-  --report [path] also write a standalone HTML report and print its path
+  --report        also write a standalone HTML report and print its path
+  --report=PATH   write the report to PATH instead of the default name
   --help          this text
   --version       print version
 
@@ -68,10 +69,11 @@ function parseArgs(argv) {
     if (a === '--version' || a === '-V') return { version: true };
     else if (a === '--plan') opts.plan = true;
     else if (a === '--json') opts.json = true;
-    else if (a === '--report') {
-      // Optional path. `--report` alone picks a filename; `--report x.html` names one.
-      const next = argv[i + 1];
-      opts.report = next && !next.startsWith('--') ? argv[++i] : '';
+    else if (a === '--report' || a.startsWith('--report=')) {
+      // `=` only, never a bare next argument: the question itself is a bare
+      // argument too, so `--report "<question>"` would otherwise swallow the
+      // whole question as a file path and leave nothing to search for.
+      opts.report = a.startsWith('--report=') ? a.slice('--report='.length) : '';
     }
     else if (a === '--limit') opts.limit = Number(argv[++i]);
     else if (a === '--per-host') opts.perHost = Number(argv[++i]);

@@ -252,6 +252,7 @@ ai-internet-search --plan "<question>"       triage only, fetch nothing
 ai-internet-search --limit 5 "<question>"    open more sources
 ai-internet-search --json "<question>"       JSON instead of TOON
 ai-internet-search --report "<question>"     also write a standalone HTML report
+ai-internet-search --report=out.html "<question>"  write it to a specific path
 ```
 
 | exit | meaning |
