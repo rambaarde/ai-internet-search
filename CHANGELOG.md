@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.3.0...ai-internet-search-v0.3.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* --report "&lt;question&gt;" was swallowing the whole question as a path ([6250013](https://github.com/rambaarde/ai-internet-search/commit/62500137e85601489bb78b6d4f8a9938cd3bb52a))
+* --report path parsing, plus a filesystem test sandbox ([faf4c74](https://github.com/rambaarde/ai-internet-search/commit/faf4c741348ff428cef91bd8f68d5775be60a3d9))
+
 ## [0.3.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.2.0...ai-internet-search-v0.3.0) (2026-09-03)
 
 
