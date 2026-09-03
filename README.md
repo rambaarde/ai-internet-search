@@ -217,6 +217,21 @@ For comparison, [Anthropic measured](https://www.anthropic.com/engineering/multi
 agents at ~4× a chat turn and multi-agent research at ~15×. This is a single
 pass that opens at most three pages.
 
+## One question, one pass
+
+No query decomposition, no re-searching on a found gap, no reflection loop.
+This is deliberate, not unfinished: every published deep-research
+architecture — [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system),
+OpenAI, Gemini, Perplexity — reserves iteration for **multi-hop** questions,
+ones whose answer isn't in any single source. Perplexity, the most
+iteration-heavy of them, still routes a simple factual query through one
+retrieval pass, same as this tool does for every question. Nothing published
+measures a decomposition gain on a single-fact question.
+
+A multi-hop question is better split by the caller, which already has an LLM,
+into several calls to this tool — decomposition done by the party that
+already reasons, without an LLM or a dependency inside the pipeline.
+
 ## Sources
 
 Key-less by default: Hacker News, Wikipedia, OpenAlex. No signup between an
