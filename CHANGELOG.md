@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.3.1...ai-internet-search-v0.4.0) (2026-09-03)
+
+
+### Features
+
+* find sources in the language the question was asked in ([47186b7](https://github.com/rambaarde/ai-internet-search/commit/47186b746a4a2c756eafacb2916ddfbbd30057cb))
+* multilingual source discovery, and a report built for scanning ([59a9594](https://github.com/rambaarde/ai-internet-search/commit/59a95944578e14ba6b6d4b9e7640bb0857680696))
+* **report:** set the report as a paper, and show its own evidence ([9e7cd5b](https://github.com/rambaarde/ai-internet-search/commit/9e7cd5b3e0990b057050bec7dd6bc0f97a1d3ebf))
+* **report:** summary as labeled fields, bottom line first ([304cdf3](https://github.com/rambaarde/ai-internet-search/commit/304cdf307edc2ee3dc89d44205c1222e0b0ee60d))
+
 ## [0.3.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.3.0...ai-internet-search-v0.3.1) (2026-09-03)
 
 
