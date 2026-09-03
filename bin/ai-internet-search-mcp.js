@@ -14,6 +14,7 @@
  */
 
 const readline = require('node:readline');
+const http = require('node:http');
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { triage } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
@@ -124,7 +125,10 @@ async function research(question, { limit = 3, plan = false } = {}) {
   return out.join('\n');
 }
 
-const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
+// Where replies go. stdio writes a line; the HTTP transport swaps this for a
+// capture so the same handler serves both without being written twice.
+let sink = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
+const send = (msg) => sink(msg);
 
 async function handle(req) {
   const { id, method, params } = req;
@@ -167,7 +171,78 @@ async function handle(req) {
   send({ jsonrpc: '2.0', id, error: { code: -32601, message: `method not found: ${method}` } });
 }
 
-readline.createInterface({ input: process.stdin }).on('line', (line) => {
+/**
+ * HTTP transport, for clients that connect by URL rather than by spawning a
+ * command. Claude Desktop and Cursor spawn stdio; BrowserOS and other
+ * browser-resident agents cannot, because there is no shell to spawn from.
+ *
+ * Same JSON-RPC handler, same tools, same bytes on the wire — a transport
+ * choice costs nothing in tokens, it only changes who can reach the server.
+ *
+ * Loopback only. This answers questions from the live web and writes nothing,
+ * but a listening port on a developer machine should still not be reachable
+ * from the network, and a default that binds everywhere is a default someone
+ * eventually regrets.
+ */
+function serveHttp(port) {
+  const server = http.createServer((req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'POST a JSON-RPC message' } }));
+    }
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      // A JSON-RPC message is small; anything large is a mistake or an abuse.
+      if (body.length > 1_000_000) req.destroy();
+    });
+    req.on('end', async () => {
+      let msg;
+      try {
+        msg = JSON.parse(body);
+      } catch {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }));
+      }
+      // The stdio path writes replies to stdout. Over HTTP the reply is the
+      // response body, so the sink is swapped for the duration of the call
+      // rather than the handler being duplicated.
+      let captured = null;
+      const restore = sink;
+      sink = (m) => { captured = m; };
+      try {
+        await handle(msg);
+      } catch (e) {
+        captured = { jsonrpc: '2.0', id: msg.id ?? null, error: { code: -32603, message: String(e && e.message) } };
+      } finally {
+        sink = restore;
+      }
+      // A notification has no reply; 202 says "accepted, nothing to say".
+      if (captured === null) {
+        res.writeHead(202, { 'content-type': 'application/json' });
+        return res.end('');
+      }
+      // application/json is what identifies this as streamable-http to a
+      // probing client; text/event-stream would be read as SSE instead.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(captured));
+    });
+  });
+  server.listen(port, '127.0.0.1', () => {
+    process.stdout.write(`ai-internet-search-mcp: http://127.0.0.1:${server.address().port}\n`);
+  });
+  server.on('error', (e) => {
+    process.stdout.write(`error: ${e.code === 'EADDRINUSE' ? `port ${port} is already in use` : e.message}\n`);
+    process.exit(1);
+  });
+}
+
+const httpFlag = process.argv.indexOf('--http');
+if (httpFlag !== -1) {
+  const next = process.argv[httpFlag + 1];
+  serveHttp(Number(next && !next.startsWith('--') ? next : 0) || 8787);
+} else {
+  readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (!line.trim()) return;
   let req;
   try {
@@ -175,7 +250,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   } catch {
     return send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } });
   }
-  handle(req).catch((e) => {
-    if (req.id !== undefined) send({ jsonrpc: '2.0', id: req.id, error: { code: -32603, message: String(e && e.message) } });
+    handle(req).catch((e) => {
+      if (req.id !== undefined) send({ jsonrpc: '2.0', id: req.id, error: { code: -32603, message: String(e && e.message) } });
+    });
   });
-});
+}

@@ -115,13 +115,27 @@ is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a 
   const withNumber = scoreSentence('Set the connection pool to 10 for this workload.', terms);
   const without = scoreSentence('The connection pool is a thing that exists somewhere.', terms);
   ok(withNumber > without ? 'a sentence stating a figure outranks a vague one' : 'x');
+
+  // Quoted alone, "it" has no antecedent -- the claim reads as being about
+  // nothing. Deprioritized, not dropped: still selectable if nothing else fits.
+  const orphaned = scoreSentence('It should be set to 10 connections for this workload.', terms);
+  const grounded = scoreSentence('The connection pool should be set to 10 for this workload.', terms);
+  ok(orphaned < grounded ? 'a claim whose subject is a bare pronoun is deprioritized' : 'x');
+  ok(orphaned > 0 ? 'an orphaned claim is still usable, not zeroed out' : 'x');
 }
 
 // --- conflict detection and grading -----------------------------------------
 // The reason the tool exists. Models "favor the majority viewpoint even when
 // opposing evidence is more credible", so certainty must never be a vote.
 {
-  const { findConflicts, grade } = require('../lib/assess');
+  const { findConflicts, grade, overlap } = require('../lib/assess');
+
+  // "connection" and "connections" are the same word to a reader; without
+  // stemming, a singular claim and a plural one about the same thing can
+  // fall under the conflict threshold and a real disagreement goes unseen.
+  is(Math.round(overlap('the pool has 5 connection', 'the pool has 5 connections') * 100) / 100, 1,
+     'singular and plural forms of the same word count as shared');
+
   const disagree = [
     { tier: 1, host: 'postgresql.org', url: 'u1', read: true,
       claims: [{ text: 'You should set the connection pool to around 10 connections for this workload.' }] },
@@ -174,6 +188,115 @@ is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a 
   has(byId[3]?.error?.message || '', 'method not found', 'MCP rejects an unknown method as a JSON-RPC error');
 }
 
+// --- HTML report ------------------------------------------------------------
+// For the human deciding whether to act, not for the agent. Written to a file,
+// never to stdout: an agent piping markup back into its own context would pay
+// exactly the cost this tool exists to avoid.
+{
+  const { renderReport } = require('../lib/report');
+  const html = renderReport({
+    question: 'q', query: 'postgres pool', command: 'ai-internet-search --limit 5 --report "q"',
+    certainty: { level: 'low', why: 'one primary source; downgraded by a disagreement' },
+    providers: ['hackernews'],
+    gaps: { missingTerms: ['pgbouncer'], unread: [] },
+    conflicts: [{ kind: 'figures differ',
+      a: { tier: 1, host: 'postgresql.org', url: 'http://a', text: 'around 10 connections' },
+      b: { tier: 4, host: 'top10devblogs.com', url: 'http://b', text: 'always 100 connections' },
+      prefer: { tier: 1, host: 'postgresql.org' } }],
+    sources: [{ tier: 1, host: 'a.com', why: 'docs', url: 'http://a', read: true, bytes: 1000,
+      claims: [{ text: 'The latest version deprecates this flag.' },
+               { text: 'A pool maintains a set of connections internally.' }] },
+      { tier: 3, host: 'b.com', why: 'x', url: 'http://b', read: false, reason: 'http 403', claims: [] }],
+  });
+
+  // Standalone by construction: it must render the same in lavish-axi, a
+  // browser, an attachment, or a printer, in ten years.
+  hasnt(html, '<script', 'the report ships no script');
+  hasnt(html, 'cdn.', 'the report loads nothing from a CDN');
+  has(html, '@media print', 'the report is printable');
+  has(html, 'prefers-color-scheme', 'the report follows the reader\'s theme');
+
+  // The three things TOON flattens.
+  has(html, 'low certainty', 'certainty leads the report');
+  has(html, 'Disagreements', 'a disagreement is given its own section');
+  has(html, 'postgresql.org', 'both sides of a disagreement are named');
+  has(html, 'more authoritative', 'the verdict says why, not which is more numerous');
+
+  // A claim that rots is marked; a timeless one is not.
+  has(html, 'v-fast', 'a perishable claim is flagged');
+  // Check the claim's own list item. Splitting on the text and scanning the
+  // remainder catches the legend below, which legitimately names every class.
+  const timelessLi = (html.match(/<li>[^<]*A pool maintains[\s\S]*?<\/li>/) || [''])[0];
+  hasnt(timelessLi, 'class="vol', 'a timeless claim carries no volatility flag');
+
+  // A gap is only useful if it says what to run next.
+  has(html, 'ai-internet-search "postgres pool pgbouncer"', 'a gap becomes a runnable next query');
+  has(html, 'ai-internet-search --limit 5 --report', 'the report states the command that produced it');
+  has(html, 'http 403', 'an unreadable source is reported with its reason');
+
+  // Content is escaped: a page title containing markup must not become markup.
+  const evil = renderReport({ question: '<img src=x onerror=alert(1)>', query: 'q',
+    certainty: { level: 'none', why: 'x' }, sources: [], conflicts: [], gaps: {} });
+  hasnt(evil, '<img src=x', 'source content cannot inject markup into the report');
+}
+
+// --- MCP over HTTP ----------------------------------------------------------
+// Clients that connect by URL cannot spawn a command. The transport changes
+// who can reach the server and nothing else: same handler, same tools, same
+// bytes, so it costs nothing in tokens.
+{
+  const { spawn } = require('node:child_process');
+  const MCP = join(__dirname, '..', 'bin', 'ai-internet-search-mcp.js');
+  const PORT = 8793;
+  const srv = spawn(process.execPath, [MCP, '--http', String(PORT)], { stdio: 'ignore' });
+
+  const post = async (body, headers = {}) => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+    const text = await res.text();
+    return { status: res.status, type: res.headers.get('content-type') || '', json: text ? JSON.parse(text) : null };
+  };
+
+  (async () => {
+    for (let i = 0; i < 20; i++) {
+      try { await fetch(`http://127.0.0.1:${PORT}/`, { method: 'POST', body: '{}', signal: AbortSignal.timeout(500) }); break; }
+      catch { await new Promise((r) => setTimeout(r, 150)); }
+    }
+
+    // The exact probe a URL-based client sends to decide the transport. It
+    // branches on content-type: application/json means streamable-http.
+    const probe = await post({ jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'probe', version: '1' } } });
+    is(probe.status, 200, 'a transport probe gets 200');
+    has(probe.type, 'application/json', 'the response identifies the transport as streamable-http');
+    is(probe.json?.result?.protocolVersion, '2025-03-26', 'the client\'s protocol version is echoed, not overridden');
+    has(probe.json?.result?.instructions || '', 'counting', 'instructions travel over http too');
+
+    const list = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    is((list.json?.result?.tools || []).map((t) => t.name).sort().join(','), 'plan_research,research',
+       'the same tools are served over http');
+
+    // A notification has no reply. 202 says accepted-with-nothing-to-say,
+    // which is not the same as an empty 200.
+    const note = await post({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    is(note.status, 202, 'a notification is accepted with no reply body');
+
+    const bad = await post({ jsonrpc: '2.0', id: 2, method: 'bogus' });
+    has(bad.json?.error?.message || '', 'method not found', 'an unknown method is a JSON-RPC error over http');
+
+    const getRes = await fetch(`http://127.0.0.1:${PORT}/`, { signal: AbortSignal.timeout(5000) });
+    is(getRes.status, 405, 'GET is refused; this is a JSON-RPC endpoint, not a web page');
+
+    srv.kill();
+    finish();
+  })().catch((e) => { nok('MCP http transport', e.message); srv.kill(); finish(); });
+}
+
+function finish() {
 // --- network-dependent ------------------------------------------------------
 (async () => {
   let online = true;
@@ -203,3 +326,4 @@ is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a 
   console.log(`${pass + fail} tests, ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 })();
+}

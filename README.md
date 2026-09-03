@@ -104,6 +104,44 @@ it is not high certainty whatever its sources.
 read with the reason — `http 403`, `timed out`, `too large`. "I could not open
 this" and "I read it and it said nothing" are different answers.
 
+## Checked against the research, not just designed against it
+
+Every claim above was designed in before any of this was measured. Afterward,
+each design decision was checked against what's actually been published about
+how AI agents fail at research — plain language, what it means for this tool:
+
+- **Citing something isn't the same as it actually saying that.** One
+  benchmark found up to 1 in 5 "cited" claims from research agents don't
+  match what the cited page actually says
+  ([DeepResearch Bench](https://arxiv.org/abs/2506.11763)). That happens when
+  an agent *paraphrases* a source and cites it. This tool never paraphrases —
+  every claim is quoted from the page, word for word. There's no
+  paraphrase step for the citation to drift away from.
+
+- **Repeat something enough times and even a "smart" ranking flips.** Models
+  that normally prefer an official source over a random blog will switch
+  preference if the same wrong claim shows up on enough low-quality pages
+  ([Whose Facts Win?](https://arxiv.org/abs/2601.03746)). Doesn't apply here —
+  ranking happens *before* anything is fetched, and only one page per site
+  gets read at all, so volume never reaches the step that decides what to
+  trust.
+
+- **Which source gets read first can quietly bias the answer**, separate from
+  which one is actually right. This tool already reads the most credible
+  source first and lists it first in the output — there's no "which one did
+  it happen to read first" to be biased by.
+
+- **Refusing to answer beats a confident wrong guess, and it's not close.**
+  Letting a model say "I don't know" instead of forcing an answer cut its
+  error rate roughly in half in one study, for a small hit to how often it
+  answers at all. That's exactly the trade `could_not_establish` makes below.
+
+- **The one gap that's real, not fully closed:** ranking is based on the
+  shape of a URL (`docs.`, a `github.com` release page, `.org`). A page
+  deliberately built to *look* like documentation could still slip into a
+  higher tier than it deserves. Harder to fake than a purchasable
+  "domain authority" score, but not impossible — worth knowing, not yet fixed.
+
 ## Empty results are answers
 
 ```
@@ -116,6 +154,29 @@ could_not_establish: no source above the noise floor answered this.
 Silence is indistinguishable from a crash, and a confident guess is worse than
 either. Finding nothing exits `0` — it is an answer, not a failure.
 
+## It finds the figures, it does not describe them
+
+An agent reads plain text. A benchmark chart, an architecture diagram, or a
+latency graph is exactly where the load-bearing evidence usually lives, and it
+is invisible to text extraction.
+
+So charts and diagrams are located and returned as pointers, with the sentence
+that introduced them:
+
+```
+visuals[2]{tier,host,why,url}:
+  1,github.com,chart or benchmark,https://github.com/.../pool-size-vs-latency.png
+  2,arxiv.org,figure,https://arxiv.org/.../fig3-throughput.png
+```
+
+Chrome — avatars, icons, logos, spacers, tracking pixels — is filtered out.
+
+**It does not claim to have read them.** The tool has no vision model; it says
+where a figure is and what the page said about it, and a multimodal agent can
+fetch it. Alt text was tried first and abandoned after measurement: Wikipedia's
+"descriptive" alt attributes turned out to be *"The Free Encyclopedia"* and
+*"Wikimedia Foundation"*. Alt text describes the site, not the science.
+
 ## Usage
 
 ```sh
@@ -123,6 +184,7 @@ ai-internet-search "<question>"              research a question
 ai-internet-search --plan "<question>"       triage only, fetch nothing
 ai-internet-search --limit 5 "<question>"    open more sources
 ai-internet-search --json "<question>"       JSON instead of TOON
+ai-internet-search --report "<question>"     also write a standalone HTML report
 ```
 
 | exit | meaning |
@@ -143,6 +205,18 @@ have no shell, so an MCP server ships alongside:
   }
 }
 ```
+
+Clients that connect by **URL** rather than by spawning a command — browser-
+resident agents, anything remote — need an HTTP transport instead:
+
+```sh
+ai-internet-search-mcp --http 8787   # streamable-http, 127.0.0.1 only
+```
+
+Same handler, same tools, **the same bytes on the wire**: the handshake plus
+both tool schemas measures 415 tokens over either transport. A transport choice
+costs nothing in tokens, it only changes who can reach the server. It binds to
+loopback and nothing else.
 
 Two tools, `research` and `plan_research`. The MCP `instructions` field carries
 the rules with the result, because a result whose conflicts get averaged back
@@ -180,6 +254,21 @@ without fetching them at all.
 For comparison, [Anthropic measured](https://www.anthropic.com/engineering/multi-agent-research-system)
 agents at ~4× a chat turn and multi-agent research at ~15×. This is a single
 pass that opens at most three pages.
+
+## One question, one pass
+
+No query decomposition, no re-searching on a found gap, no reflection loop.
+This is deliberate, not unfinished: every published deep-research
+architecture — [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system),
+OpenAI, Gemini, Perplexity — reserves iteration for **multi-hop** questions,
+ones whose answer isn't in any single source. Perplexity, the most
+iteration-heavy of them, still routes a simple factual query through one
+retrieval pass, same as this tool does for every question. Nothing published
+measures a decomposition gain on a single-fact question.
+
+A multi-hop question is better split by the caller, which already has an LLM,
+into several calls to this tool — decomposition done by the party that
+already reasons, without an LLM or a dependency inside the pipeline.
 
 ## Sources
 

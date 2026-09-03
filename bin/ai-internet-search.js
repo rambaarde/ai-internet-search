@@ -22,6 +22,9 @@ const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { triage } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
+const { renderReport } = require('../lib/report');
+const { writeFileSync, statSync } = require('node:fs');
+const { join } = require('node:path');
 
 const VERSION = require('../package.json').version;
 
@@ -49,6 +52,7 @@ flags:
   --limit N       maximum sources to open (default 3)
   --per-host N    maximum sources per host (default 1)
   --json          emit JSON instead of TOON
+  --report [path] also write a standalone HTML report and print its path
   --help          this text
   --version       print version
 
@@ -56,7 +60,7 @@ exit codes:
   0 success   1 error   2 bad usage`;
 
 function parseArgs(argv) {
-  const opts = { limit: 3, perHost: 1, plan: false, json: false };
+  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -64,6 +68,11 @@ function parseArgs(argv) {
     if (a === '--version' || a === '-V') return { version: true };
     else if (a === '--plan') opts.plan = true;
     else if (a === '--json') opts.json = true;
+    else if (a === '--report') {
+      // Optional path. `--report` alone picks a filename; `--report x.html` names one.
+      const next = argv[i + 1];
+      opts.report = next && !next.startsWith('--') ? argv[++i] : '';
+    }
     else if (a === '--limit') opts.limit = Number(argv[++i]);
     else if (a === '--per-host') opts.perHost = Number(argv[++i]);
     // AXI: an unknown flag fails loudly rather than being swallowed as text.
@@ -106,6 +115,29 @@ async function main() {
   const conflicts = opts.plan ? [] : findConflicts(opened);
   const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
+
+  // A file, never stdout. An agent piping markup back into its own context
+  // would pay exactly the cost this tool exists to avoid, so it gets a path.
+  let reportPath = '';
+  if (opts.report !== null && !opts.plan) {
+    const slug = query.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 40) || 'research';
+    reportPath = opts.report || join(process.cwd(), `${slug}.html`);
+    try {
+      // The command as actually run, flags included -- a reproduce line that
+      // omits --limit 5 does not reproduce anything.
+      const flags = [
+        opts.limit !== 3 ? `--limit ${opts.limit}` : '',
+        opts.perHost !== 1 ? `--per-host ${opts.perHost}` : '',
+        '--report',
+      ].filter(Boolean).join(' ');
+      writeFileSync(reportPath, renderReport({ question: opts.question, query, certainty,
+        sources: opened, conflicts, gaps: missing, providers: found.providers,
+        command: `ai-internet-search ${flags} "${opts.question}"` }));
+    } catch (e) {
+      reportPath = '';
+      process.stdout.write(`warning: could not write the report (${e.message})\n`);
+    }
+  }
 
   if (opts.json) {
     return out(JSON.stringify({ question: opts.question, query, kinds: kindsFor(opts.question),
@@ -157,6 +189,21 @@ async function main() {
     lines.push('');
   }
 
+  // Visuals are listed separately and never described, because this tool
+  // cannot see them. A model with vision can open the url; a model without one
+  // at least knows the page's argument partly lives in a picture.
+  const visuals = [];
+  for (const s of opened) for (const v of s.visuals || []) visuals.push({ tier: s.tier, host: s.host, why: v.why, url: v.url });
+  if (visuals.length) {
+    lines.push(toon('visuals', ['tier', 'host', 'why', 'url'], visuals));
+    const ptr = opened.flatMap((s) => s.visualPointers || []);
+    if (ptr.length) {
+      lines.push(`  the page points at them:`);
+      for (const p of ptr.slice(0, 2)) lines.push(`    ${p}`);
+    }
+    lines.push('');
+  }
+
   const unread = opened.filter((s) => !s.read);
   if (unread.length || missing.missingTerms.length) {
     lines.push('could_not_establish:');
@@ -173,9 +220,30 @@ async function main() {
   const kb = Math.round(opened.reduce((n, s) => n + (s.bytes || 0), 0) / 1024);
   lines.push(`triaged: ${found.candidates.length} found, ${opened.length} opened, ${found.candidates.length - opened.length} skipped before fetching${kb ? ` (${kb}kb read → ${claimRows.length} claims)` : ''}`);
   lines.push('');
+  if (reportPath) {
+    lines.push(`report: ${reportPath}`);
+    // lavish-axi opens agent-written HTML with an annotation layer. Named only
+    // if it is actually installed -- suggesting a tool the reader does not
+    // have is noise, and the file opens in any browser regardless.
+    // Resolved by walking PATH rather than shelling out: `shell: true` with
+    // arguments emits a Node deprecation warning straight into the output an
+    // agent reads, and a warning in a machine-read stream is a defect.
+    const hasLavish = ['lavish-axi'].some((cmd) =>
+      (process.env.PATH || '').split(':').some((dir) => {
+        try {
+          return dir && statSync(join(dir, cmd)).isFile();
+        } catch {
+          return false;
+        }
+      })
+    );
+    lines.push(hasLavish ? `  open with: lavish-axi ${reportPath}` : `  open it in any browser`);
+    lines.push('');
+  }
+
   lines.push('help[2]:');
   lines.push('  a tier-1 source outranks any number of tier-3+ ones; never settle a disagreement by counting');
-  lines.push('  ai-internet-search --limit 5 "<question>"   # read more sources');
+  lines.push(`  ai-internet-search --report "<question>"   # standalone HTML for a human to read`);
   return out(lines.join('\n'), 0);
 }
 
