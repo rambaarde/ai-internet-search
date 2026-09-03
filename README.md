@@ -266,7 +266,7 @@ ai-internet-search --report=out.html "<question>"  write it to a specific path
 `npm install -g ai-internet-search` puts both binaries on `PATH` once, for
 every client below.
 
-### Terminal agents — Claude Code, Codex CLI, Gemini CLI
+### Terminal agents — Claude Code, Codex CLI, Antigravity (`agy`), Gemini CLI
 
 They already have a shell. **Nothing to register** — the agent just runs
 `ai-internet-search "<question>"` the moment it's installed, the same as any
@@ -281,6 +281,7 @@ be registered:
 |---|---|
 | Claude Code | `claude mcp add --scope user ai-internet-search -- ai-internet-search-mcp` |
 | Codex CLI (`~/.codex/config.toml`) | `[mcp_servers.ai-internet-search]`<br/>`command = "ai-internet-search-mcp"` |
+| Antigravity (`agy`) | `agy mcp add ai-internet-search ai-internet-search-mcp` |
 | Gemini CLI (`~/.gemini/settings.json`) | `{ "mcpServers": { "ai-internet-search": { "command": "ai-internet-search-mcp" } } }` |
 
 ### GUI clients — no shell to call
