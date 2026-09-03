@@ -115,13 +115,27 @@ is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a 
   const withNumber = scoreSentence('Set the connection pool to 10 for this workload.', terms);
   const without = scoreSentence('The connection pool is a thing that exists somewhere.', terms);
   ok(withNumber > without ? 'a sentence stating a figure outranks a vague one' : 'x');
+
+  // Quoted alone, "it" has no antecedent -- the claim reads as being about
+  // nothing. Deprioritized, not dropped: still selectable if nothing else fits.
+  const orphaned = scoreSentence('It should be set to 10 connections for this workload.', terms);
+  const grounded = scoreSentence('The connection pool should be set to 10 for this workload.', terms);
+  ok(orphaned < grounded ? 'a claim whose subject is a bare pronoun is deprioritized' : 'x');
+  ok(orphaned > 0 ? 'an orphaned claim is still usable, not zeroed out' : 'x');
 }
 
 // --- conflict detection and grading -----------------------------------------
 // The reason the tool exists. Models "favor the majority viewpoint even when
 // opposing evidence is more credible", so certainty must never be a vote.
 {
-  const { findConflicts, grade } = require('../lib/assess');
+  const { findConflicts, grade, overlap } = require('../lib/assess');
+
+  // "connection" and "connections" are the same word to a reader; without
+  // stemming, a singular claim and a plural one about the same thing can
+  // fall under the conflict threshold and a real disagreement goes unseen.
+  is(Math.round(overlap('the pool has 5 connection', 'the pool has 5 connections') * 100) / 100, 1,
+     'singular and plural forms of the same word count as shared');
+
   const disagree = [
     { tier: 1, host: 'postgresql.org', url: 'u1', read: true,
       claims: [{ text: 'You should set the connection pool to around 10 connections for this workload.' }] },
