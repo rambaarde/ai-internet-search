@@ -142,7 +142,7 @@ async function main() {
         .sort((a, b) => a.tier - b.tier);
       writeFileSync(reportPath, renderReport({ question: opts.question, query, certainty,
         sources: opened, conflicts, gaps: missing, providers: found.providers,
-        candidatesFound: found.candidates.length, skipped,
+        candidatesFound: found.candidates.length, skipped, languages: found.languages,
         command: `ai-internet-search ${flags} "${opts.question}"` }));
     } catch (e) {
       reportPath = '';

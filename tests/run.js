@@ -9,7 +9,7 @@ const { join } = require('node:path');
 const { mkdtempSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { gradeSource, triage } = require('../lib/sources');
-const { keywords, looksRelevant, kindsFor } = require('../lib/search');
+const { keywords, looksRelevant, kindsFor, languagesFor, fold } = require('../lib/search');
 
 const BIN = join(__dirname, '..', 'bin', 'ai-internet-search.js');
 let pass = 0;
@@ -87,6 +87,39 @@ is(looksRelevant('Show HN: I made an MCP server', ['connection', 'pool']), 'fals
 
 is(kindsFor('what is a mutex').join(','), 'definition,engineering', 'a definition question picks the reference source');
 is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a research question picks the citation index');
+
+// --- languages ---------------------------------------------------------------
+// The tool asked English Wikipedia and nothing else, so a question asked in
+// Tagalog or Japanese was answered from a corpus that mostly does not discuss
+// it. Every case below was a real failure before these were added.
+is(languagesFor('what is a connection pool').join(','), 'en', 'an English question stays English');
+is(languagesFor('ano ang pagbabago ng klima sa Pilipinas').join(','), 'tl,en', 'Tagalog is detected from its function words');
+is(languagesFor('que es el cambio climatico').join(','), 'es,en', 'Spanish is detected from its function words');
+is(languagesFor('\u30b3\u30cd\u30af\u30b7\u30e7\u30f3\u30d7\u30fc\u30eb\u3068\u306f').join(','), 'ja,en', 'Japanese is detected from its script');
+is(languagesFor('\u0447\u0442\u043e \u0442\u0430\u043a\u043e\u0435 \u043f\u0443\u043b \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0439').join(','), 'ru,en', 'Cyrillic is detected from its script');
+// English is always asked as well, so adding a language can only raise recall.
+ok(languagesFor('ano ang klima sa Pilipinas').includes('en') ? 'English is always queried as a floor' : 'x');
+
+// The stopword list was English only. Left unfixed, asking Tagalog Wikipedia
+// for "ano ang pagbabago klima pilipinas" returned Daigdig, Asya and
+// Ferdinand Marcos, because the engine matched the noise words.
+is(keywords('ano ang pagbabago ng klima sa Pilipinas'), 'pagbabago klima pilipinas',
+   'Tagalog question framing is stripped, not just English');
+is(keywords('que es el cambio climatico'), 'cambio climatico', 'Spanish question framing is stripped');
+is(keywords('was ist ein Verbindungspool'), 'verbindungspool', 'German question framing is stripped');
+// CJK has no spaces, so its framing has to be cut from the string. Left in,
+// the whole query is one token that no article title contains.
+is(keywords('\u30b3\u30cd\u30af\u30b7\u30e7\u30f3\u30d7\u30fc\u30eb\u3068\u306f'), '\u30b3\u30cd\u30af\u30b7\u30e7\u30f3\u30d7\u30fc\u30eb',
+   'a Japanese interrogative suffix is removed from an unspaced query');
+is(keywords('\u8fde\u63a5\u6c60\u662f\u4ec0\u4e48'), '\u8fde\u63a5\u6c60', 'a Chinese interrogative is removed from an unspaced query');
+is(keywords('what is a connection pool'), 'connection pool', 'the English path is unchanged');
+
+// A person types "climatico" and the article is "Climático". Without folding,
+// includes() says no, the right result is discarded, and the tool reports
+// finding nothing: a false empty, the worst answer it can give.
+is(fold('Cambio Clim\u00e1tico'), 'cambio climatico', 'diacritics are folded for comparison');
+is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
+   'an accented title matches an unaccented query');
 
 // --- installed as a real package, not run as a dev script -------------------
 // Every other test invokes `node bin/ai-internet-search.js` directly, which
@@ -266,10 +299,21 @@ is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a 
   hasnt(html, '<script', 'the report ships no script');
   hasnt(html, 'cdn.', 'the report loads nothing from a CDN');
   has(html, '@media print', 'the report is printable');
-  has(html, 'prefers-color-scheme', 'the report follows the reader\'s theme');
+  // Deliberately NOT theme-aware. A paper is white; rendered dark it reads as
+  // a UI panel instead of a document. `only light` also stops a browser or OS
+  // setting from auto-inverting it.
+  has(html, 'color-scheme:only light', 'the report stays a white sheet in any theme');
+  hasnt(html, '@media (prefers-color-scheme', 'no dark theme is defined for a paper');
 
   // The three things TOON flattens.
-  has(html, 'low certainty', 'certainty leads the report');
+  // Certainty is stated in the summary block, before any finding it qualifies.
+  has(html, '<dt>Certainty</dt>', 'certainty is a labeled field, not buried in prose');
+  ok(html.indexOf('<dt>Certainty</dt>') < html.indexOf('Findings') ? 'certainty is stated before the findings' : 'x');
+  // Bottom line up front, and it is a quotation rather than a composed
+  // sentence: composing one would be the single place this tool paraphrased.
+  has(html, '<dt>Bottom line</dt>', 'the decision-relevant line comes first');
+  has(html, 'A pool maintains a set of connections internally.',
+      'the bottom line is quoted from the most credible source, not written');
   has(html, 'Disagreements', 'a disagreement is given its own section');
   has(html, 'postgresql.org', 'both sides of a disagreement are named');
   has(html, 'more authoritative', 'the verdict says why, not which is more numerous');
