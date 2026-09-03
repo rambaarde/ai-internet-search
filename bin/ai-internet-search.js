@@ -19,7 +19,7 @@
  */
 
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
-const { triage } = require('../lib/sources');
+const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
 const { renderReport } = require('../lib/report');
@@ -132,8 +132,17 @@ async function main() {
         opts.perHost !== 1 ? `--per-host ${opts.perHost}` : '',
         '--report',
       ].filter(Boolean).join(' ');
+      // What was NOT opened, and why it was ranked below what was. A reader
+      // who can see the discarded candidates can audit the triage decision;
+      // one who is only shown the winners has to take it on trust.
+      const chosenUrls = new Set(chosen.map((c) => c.url));
+      const skipped = found.candidates
+        .filter((c) => !chosenUrls.has(c.url))
+        .map((c) => ({ url: c.url, ...gradeSource(c.url) }))
+        .sort((a, b) => a.tier - b.tier);
       writeFileSync(reportPath, renderReport({ question: opts.question, query, certainty,
         sources: opened, conflicts, gaps: missing, providers: found.providers,
+        candidatesFound: found.candidates.length, skipped,
         command: `ai-internet-search ${flags} "${opts.question}"` }));
     } catch (e) {
       reportPath = '';

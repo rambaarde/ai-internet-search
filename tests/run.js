@@ -88,6 +88,42 @@ is(looksRelevant('Show HN: I made an MCP server', ['connection', 'pool']), 'fals
 is(kindsFor('what is a mutex').join(','), 'definition,engineering', 'a definition question picks the reference source');
 is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a research question picks the citation index');
 
+// --- installed as a real package, not run as a dev script -------------------
+// Every other test invokes `node bin/ai-internet-search.js` directly, which
+// never touches the shebang line, the executable bit, or npm's bin-symlink
+// mechanism. That is not how an agent runs this: it runs `ai-internet-search
+// "<question>"` as a bare command after `npm install`. Pack the real tarball,
+// install it into a throwaway prefix, and invoke the installed symlink with
+// no `node` in front of it -- the only way to prove the thing an agent
+// actually types works, rather than the thing a test harness types.
+{
+  const packDir = sandbox();
+  const installDir = sandbox();
+  execFileSync('npm', ['pack', '--silent', '--pack-destination', packDir], { cwd: join(__dirname, '..') });
+  const { readdirSync } = require('node:fs');
+  const tarball = join(packDir, readdirSync(packDir).find((f) => f.endsWith('.tgz')));
+  execFileSync('npm', ['install', tarball, '--no-save', '--ignore-scripts', '--silent'], { cwd: installDir });
+
+  const installedCli = join(installDir, 'node_modules', '.bin', 'ai-internet-search');
+  const installedMcp = join(installDir, 'node_modules', '.bin', 'ai-internet-search-mcp');
+
+  // No process.execPath prefix below: the OS resolves the interpreter from
+  // the file's own `#!/usr/bin/env node` line, exactly as a shell does.
+  const version = execFileSync(installedCli, ['--version'], { encoding: 'utf8' }).trim();
+  is(version, require('../package.json').version, 'the installed CLI, run as a bare command, reports the right version');
+
+  const helpOut = execFileSync(installedCli, ['--help'], { encoding: 'utf8' });
+  has(helpOut, 'usage:', 'the installed CLI answers --help the same as the dev script');
+
+  const initReply = execFileSync(installedMcp, [], {
+    input: '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}\n',
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  const parsed = JSON.parse(initReply.trim().split('\n')[0]);
+  is(parsed?.result?.serverInfo?.name, 'ai-internet-search', 'the installed MCP bin, run as a bare command, answers initialize');
+}
+
 // --- CLI contract (AXI) -----------------------------------------------------
 {
   const r = run(['--help'], 0);
