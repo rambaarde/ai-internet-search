@@ -262,19 +262,40 @@ ai-internet-search --report "<question>"     also write a standalone HTML report
 
 ## Works in the terminal and in GUI clients
 
-Terminal agents call the CLI. GUI clients — Claude Desktop, the Cursor app —
-have no shell, so an MCP server ships alongside:
+`npm install -g ai-internet-search` puts both binaries on `PATH` once, for
+every client below.
 
-```json
-{
-  "mcpServers": {
-    "ai-internet-search": { "command": "ai-internet-search-mcp" }
-  }
-}
-```
+### Terminal agents — Claude Code, Codex CLI, Gemini CLI
 
-Clients that connect by **URL** rather than by spawning a command — browser-
-resident agents, anything remote — need an HTTP transport instead:
+They already have a shell. **Nothing to register** — the agent just runs
+`ai-internet-search "<question>"` the moment it's installed, the same as any
+other CLI. Registering it as an MCP tool instead adds a layer that can only
+go out of date, and AXI measures MCP at 185k tokens per task against 79k for
+a CLI.
+
+If a client is set up to prefer tool calls over shell commands, it can still
+be registered:
+
+| client | how |
+|---|---|
+| Claude Code | `claude mcp add --scope user ai-internet-search -- ai-internet-search-mcp` |
+| Codex CLI (`~/.codex/config.toml`) | `[mcp_servers.ai-internet-search]`<br/>`command = "ai-internet-search-mcp"` |
+| Gemini CLI (`~/.gemini/settings.json`) | `{ "mcpServers": { "ai-internet-search": { "command": "ai-internet-search-mcp" } } }` |
+
+### GUI clients — no shell to call
+
+Claude Desktop and Cursor have no terminal, so they need the MCP server:
+
+| client | config file | block |
+|---|---|---|
+| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` | `{ "mcpServers": { "ai-internet-search": { "command": "ai-internet-search-mcp" } } }` |
+| Cursor | `~/.cursor/mcp.json` (or `.cursor/mcp.json` per-project) | same block |
+
+Two tools, `research` and `plan_research`. The MCP `instructions` field carries
+the rules with the result, because a result whose conflicts get averaged back
+into one confident paragraph has lost everything the tool was for.
+
+### Browser-resident and remote clients — connect by URL, not a command
 
 ```sh
 ai-internet-search-mcp --http 8787   # streamable-http, 127.0.0.1 only
@@ -284,14 +305,6 @@ Same handler, same tools, **the same bytes on the wire**: the handshake plus
 both tool schemas measures 415 tokens over either transport. A transport choice
 costs nothing in tokens, it only changes who can reach the server. It binds to
 loopback and nothing else.
-
-Two tools, `research` and `plan_research`. The MCP `instructions` field carries
-the rules with the result, because a result whose conflicts get averaged back
-into one confident paragraph has lost everything the tool was for.
-
-**Do not register the MCP server for a terminal agent.** It has a shell; MCP
-would add a layer that can only go out of date, and AXI measures MCP at 185k
-tokens per task against 79k for a CLI.
 
 ## Built for agents to call
 
