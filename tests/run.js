@@ -475,10 +475,51 @@ function finish() {
   const shortAnswer = await extractClaims(
     src('<html><body><div id="root"><p>A connection pool is a cache of open database sessions.</p></div></body></html>'), T);
   is(shortAnswer.read, true, 'a short page that does answer is not mistaken for an empty shell');
+
+  // --- optional headless-browser render (--render) --------------------------
+  const { findBrowser, renderPage } = require('../lib/render');
+
+  // Deterministic, no browser needed: failure is always null, never a throw, so
+  // a missing browser degrades the run instead of crashing it.
+  is(await renderPage('data:text/html,<h1>x</h1>', { bin: '/no/such/browser' }), null,
+     'renderPage returns null when the browser binary does not exist');
+
+  // A source that only JavaScript can fill: fetch sees the empty shell, and
+  // WITHOUT --render it stays dropped -- rendering is opt-in, never automatic.
+  const jsShell = '<html><body><div id="root"></div><script>document.getElementById("root")'
+    + '.innerHTML="The connection pool should be set to ten connections for this workload.";</script></body></html>';
+  const notRendered = await extractClaims(src(jsShell), T, { render: false });
+  is(notRendered.read, false, 'without --render, a client-rendered page is left dropped');
+  // The rescue itself spawns a browser (slow) and needs one installed, so it
+  // runs in the tally IIFE below -- which is what actually awaits before the
+  // final count and process.exit.
 })();
 
 // --- network-dependent ------------------------------------------------------
 (async () => {
+  // Optional browser render (--render). Lives in this IIFE because it is the one
+  // that awaits everything and then tallies; a slow browser spawn in another
+  // block would finish after process.exit and go uncounted. No network -- the
+  // page is a data: URL -- but it needs a real Chrome, so it skips like the
+  // offline tests below when none is installed.
+  {
+    const { findBrowser, renderPage } = require('../lib/render');
+    const { extractClaims } = require('../lib/extract');
+    const jsShell = '<html><body><div id="root"></div><script>document.getElementById("root")'
+      + '.innerHTML="The connection pool should be set to ten connections for this workload.";</script></body></html>';
+    const rsrc = { url: 'data:text/html,' + encodeURIComponent(jsShell), title: 't', tier: 1, host: 'x', why: 'w' };
+    if (!findBrowser()) {
+      console.log('skip - render tests (no Chrome/Chromium installed)');
+    } else {
+      const html = await renderPage(rsrc.url, { budgetMs: 1500, timeoutMs: 15000 });
+      is(!!(html && html.includes('ten connections')), true, 'renderPage runs the page JavaScript and returns the filled DOM');
+      const rescued = await extractClaims(rsrc, ['connection', 'pool'], { render: true });
+      is(rescued.read, true, 'with --render, a client-rendered page is rescued through the browser');
+      is(rescued.rendered, true, 'a rescued source is marked as rendered, so the reader knows how it was read');
+      is(rescued.claims.length >= 1, true, 'the browser-rendered claim is extracted like any other');
+    }
+  }
+
   let online = true;
   try {
     await fetch('https://en.wikipedia.org/w/api.php?action=query&format=json', { signal: AbortSignal.timeout(5000) });

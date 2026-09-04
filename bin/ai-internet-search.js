@@ -20,6 +20,7 @@
 
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
+const { findBrowser } = require('../lib/render');
 const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
@@ -55,6 +56,8 @@ directives (Google-style, scope the candidates a provider returned):
 
 flags:
   --plan          triage only; never opens a source
+  --render        retry a client-rendered or 403 source in a headless browser
+                  (uses an already-installed Chrome/Chromium; no-op if none)
   --limit N       maximum sources to open (default 3)
   --per-host N    maximum sources per host (default 1)
   --json          emit JSON instead of TOON
@@ -67,13 +70,14 @@ exit codes:
   0 success   1 error   2 bad usage`;
 
 function parseArgs(argv) {
-  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null };
+  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null, render: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') return { help: true };
     if (a === '--version' || a === '-V') return { version: true };
     else if (a === '--plan') opts.plan = true;
+    else if (a === '--render') opts.render = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--report' || a.startsWith('--report=')) {
       // `=` only, never a bare next argument: the question itself is a bare
@@ -128,7 +132,7 @@ async function main() {
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
   const opened = opts.plan ? chosen.map((c) => ({ ...c, read: false, reason: 'not fetched (--plan)', claims: [] }))
-                           : await readSources(chosen, terms);
+                           : await readSources(chosen, terms, { render: opts.render });
   const conflicts = opts.plan ? [] : findConflicts(opened);
   const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
@@ -184,6 +188,9 @@ async function main() {
   lines.push(`query: ${query}`);
   lines.push(`providers: ${found.providers.join(',') || 'none'}${found.failed.length ? `  unreachable: ${found.failed.join(',')}` : ''}`);
   if (directiveLine) lines.push(directiveLine);
+  // Say it plainly when --render was asked for but cannot happen: a silent
+  // no-op would look like rendering was tried and failed.
+  if (opts.render && !findBrowser()) lines.push('render: requested, but no Chrome/Chromium was found — install one, or drop --render');
   lines.push('');
 
   // AXI: a definitive empty state. Silence is indistinguishable from a crash,
@@ -250,7 +257,7 @@ async function main() {
   }
 
   lines.push(`sources[${opened.length}]{tier,host,why,url}:`);
-  for (const c of opened) lines.push(`  ${c.tier},${c.host},${c.why},${c.url}`);
+  for (const c of opened) lines.push(`  ${c.tier},${c.host},${c.why}${c.rendered ? ' (rendered)' : ''},${c.url}`);
   lines.push('');
   const kb = Math.round(opened.reduce((n, s) => n + (s.bytes || 0), 0) / 1024);
   lines.push(`triaged: ${effective.length} found, ${opened.length} opened, ${effective.length - opened.length} skipped before fetching${kb ? ` (${kb}kb read → ${claimRows.length} claims)` : ''}`);
