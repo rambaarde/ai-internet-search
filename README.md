@@ -279,6 +279,25 @@ scope was too tight is the exact failure this tool exists to avoid.
 date, so a date filter could only be parsed and then relaxed. Recency is a real
 gap, but it belongs with the source-reading path, not here.
 
+### Reading pages fetch cannot: `--render`
+
+A client-rendered SPA sends its mount point and no text, so a bare fetch gets an
+empty shell and the source is dropped as `client-rendered`. With `--render`,
+such a source (and a `403`, often anti-bot) is retried in a **headless browser**
+that runs the page's JavaScript, and the rendered DOM goes through the same
+scoring as any other page.
+
+```sh
+ai-internet-search "..."             # a source comes back: could_not_establish: client-rendered
+ai-internet-search --render "..."    # retry that one in a browser; a rescued source is marked (rendered)
+```
+
+It shells out to an **already-installed** Chrome/Chromium (`--headless
+--dump-dom`) — no npm dependency, and a **no-op when no browser is present**
+(it says so rather than failing silently). Rendering is **opt-in**: the default
+path stays the fast, fetch-only one. It fixes *reading* a page, not *finding*
+one — for the discovery gap, plug in a search source.
+
 | exit | meaning |
 |---|---|
 | `0` | success, including "found nothing" |
