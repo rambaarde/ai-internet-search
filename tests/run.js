@@ -87,6 +87,13 @@ is(looksRelevant('Show HN: I made an MCP server', ['connection', 'pool']), 'fals
 
 is(kindsFor('what is a mutex').join(','), 'definition,engineering', 'a definition question picks the reference source');
 is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a research question picks the citation index');
+// A comparison question has a literature too. Gating the citation index on the
+// word "paper" or "benchmark" made "argon2id or bcrypt" return nothing at all,
+// while OpenAlex held three on-topic papers nobody asked it for.
+is(kindsFor('should password hashing use argon2id or bcrypt').includes('academic'), true,
+   'a comparison question still reaches the citation index');
+is(kindsFor('what is a mutex').includes('academic'), false,
+   'a plain definition question does not pull from a citation index');
 
 // --- languages ---------------------------------------------------------------
 // The tool asked English Wikipedia and nothing else, so a question asked in
