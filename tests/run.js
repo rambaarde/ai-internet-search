@@ -184,7 +184,7 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
 
 // --- extraction -------------------------------------------------------------
 {
-  const { htmlToText, sentences, scoreSentence } = require('../lib/extract');
+  const { htmlToText, sentences, scoreSentence, extractClaims } = require('../lib/extract');
   // Script bodies must go before tags, or a 1MB SPA becomes "850k chars of text".
   hasnt(htmlToText('<script>var x = "hello world padding padding";</script><p>real text</p>'), 'hello world',
         'script bodies are removed, not just their tags');
@@ -207,6 +207,17 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   const grounded = scoreSentence('The connection pool should be set to 10 for this workload.', terms);
   ok(orphaned < grounded ? 'a claim whose subject is a bare pronoun is deprioritized' : 'x');
   ok(orphaned > 0 ? 'an orphaned claim is still usable, not zeroed out' : 'x');
+
+  // Pronouns that are not the first word orphan a quotation just as badly,
+  // because nothing carries the antecedent forward with it.
+  const scattered = scoreSentence('Set the connection pool to 10 because their pooler caps it there.', terms);
+  const named = scoreSentence('Set the connection pool to 10 because Supavisor caps sessions there.', terms);
+  is(scattered < named, true, 'pronouns anywhere in a claim deprioritize it, not only at the front');
+
+  // A definition answers on its own, which is what a lifted quotation must do.
+  const defined = scoreSentence('A connection pool is a cache of open database sessions.', terms);
+  const plain = scoreSentence('The connection pool was mentioned in passing somewhere.', terms);
+  is(defined > plain, true, 'a definition outranks a passing mention');
 }
 
 // --- conflict detection and grading -----------------------------------------
