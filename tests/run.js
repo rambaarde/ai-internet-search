@@ -404,6 +404,32 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
 }
 
 function finish() {
+// --- unreadable sources -----------------------------------------------------
+// Reaches nothing outside this process: the pages are data: URLs. It lives in
+// this block only because extractClaims is async and the tally runs at the end.
+(async () => {
+  const { extractClaims } = require('../lib/extract');
+  const page = (html) => 'data:text/html,' + encodeURIComponent(html);
+  const src = (html) => ({ url: page(html), title: 't', tier: 1, host: 'example.test', why: 'w' });
+  const T = ['connection', 'pool'];
+
+  // "I could not open this" and "I read it and it said nothing" are different
+  // answers, and only the first belongs under could_not_establish.
+  const spa = await extractClaims(src('<html><body><div id="root"></div><script>var a=1;</script></body></html>'), T);
+  is(spa.read, false, 'a page whose text lives only in JavaScript counts as unread');
+  has(spa.reason, 'client-rendered', 'the reason names client-side rendering, not an empty answer');
+
+  const offTopic = await extractClaims(
+    src('<html><body><p>The quick brown fox jumped over the lazy dog again and again today.</p></body></html>'), T);
+  is(offTopic.read, true, 'a server-rendered page that answers nothing is still read');
+  has(offTopic.reason, 'nothing addressed the question', 'an off-topic page keeps its own reason');
+
+  // The check must never cost a claim: a short page that does answer stays read.
+  const shortAnswer = await extractClaims(
+    src('<html><body><div id="root"><p>A connection pool is a cache of open database sessions.</p></div></body></html>'), T);
+  is(shortAnswer.read, true, 'a short page that does answer is not mistaken for an empty shell');
+})();
+
 // --- network-dependent ------------------------------------------------------
 (async () => {
   let online = true;
