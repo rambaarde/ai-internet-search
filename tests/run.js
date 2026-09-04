@@ -184,7 +184,7 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
 
 // --- extraction -------------------------------------------------------------
 {
-  const { htmlToText, sentences, scoreSentence } = require('../lib/extract');
+  const { htmlToText, sentences, scoreSentence, extractClaims } = require('../lib/extract');
   // Script bodies must go before tags, or a 1MB SPA becomes "850k chars of text".
   hasnt(htmlToText('<script>var x = "hello world padding padding";</script><p>real text</p>'), 'hello world',
         'script bodies are removed, not just their tags');
@@ -207,6 +207,17 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   const grounded = scoreSentence('The connection pool should be set to 10 for this workload.', terms);
   ok(orphaned < grounded ? 'a claim whose subject is a bare pronoun is deprioritized' : 'x');
   ok(orphaned > 0 ? 'an orphaned claim is still usable, not zeroed out' : 'x');
+
+  // Pronouns that are not the first word orphan a quotation just as badly,
+  // because nothing carries the antecedent forward with it.
+  const scattered = scoreSentence('Set the connection pool to 10 because their pooler caps it there.', terms);
+  const named = scoreSentence('Set the connection pool to 10 because Supavisor caps sessions there.', terms);
+  is(scattered < named, true, 'pronouns anywhere in a claim deprioritize it, not only at the front');
+
+  // A definition answers on its own, which is what a lifted quotation must do.
+  const defined = scoreSentence('A connection pool is a cache of open database sessions.', terms);
+  const plain = scoreSentence('The connection pool was mentioned in passing somewhere.', terms);
+  is(defined > plain, true, 'a definition outranks a passing mention');
 }
 
 // --- conflict detection and grading -----------------------------------------
@@ -393,6 +404,32 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
 }
 
 function finish() {
+// --- unreadable sources -----------------------------------------------------
+// Reaches nothing outside this process: the pages are data: URLs. It lives in
+// this block only because extractClaims is async and the tally runs at the end.
+(async () => {
+  const { extractClaims } = require('../lib/extract');
+  const page = (html) => 'data:text/html,' + encodeURIComponent(html);
+  const src = (html) => ({ url: page(html), title: 't', tier: 1, host: 'example.test', why: 'w' });
+  const T = ['connection', 'pool'];
+
+  // "I could not open this" and "I read it and it said nothing" are different
+  // answers, and only the first belongs under could_not_establish.
+  const spa = await extractClaims(src('<html><body><div id="root"></div><script>var a=1;</script></body></html>'), T);
+  is(spa.read, false, 'a page whose text lives only in JavaScript counts as unread');
+  has(spa.reason, 'client-rendered', 'the reason names client-side rendering, not an empty answer');
+
+  const offTopic = await extractClaims(
+    src('<html><body><p>The quick brown fox jumped over the lazy dog again and again today.</p></body></html>'), T);
+  is(offTopic.read, true, 'a server-rendered page that answers nothing is still read');
+  has(offTopic.reason, 'nothing addressed the question', 'an off-topic page keeps its own reason');
+
+  // The check must never cost a claim: a short page that does answer stays read.
+  const shortAnswer = await extractClaims(
+    src('<html><body><div id="root"><p>A connection pool is a cache of open database sessions.</p></div></body></html>'), T);
+  is(shortAnswer.read, true, 'a short page that does answer is not mistaken for an empty shell');
+})();
+
 // --- network-dependent ------------------------------------------------------
 (async () => {
   let online = true;
