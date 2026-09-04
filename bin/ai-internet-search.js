@@ -19,6 +19,7 @@
  */
 
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
+const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
@@ -46,6 +47,11 @@ usage:
   ai-internet-search <question>            research a question
   ai-internet-search --plan <question>     show the queries and sources, fetch nothing
   ai-internet-search --limit N <question>  open at most N sources (default 3)
+
+directives (Google-style, scope the candidates a provider returned):
+  site:host   -site:host   filetype:ext   intitle:"phrase"   inurl:str
+  e.g.  ai-internet-search "postgres pooling site:github.com"
+  A directive that would leave no candidate is relaxed, not enforced, and said so.
 
 flags:
   --plan          triage only; never opens a source
@@ -105,10 +111,19 @@ async function main() {
     );
   }
 
-  const query = keywords(opts.question);
+  // Google-style directives (site:/filetype:/intitle:/…) are pulled out of the
+  // question first, so they scope the results without polluting the keyword
+  // search that finds them. They filter the candidates a provider returned;
+  // any directive that would leave nothing is relaxed and reported.
+  const { query: cleaned, constraints, any: hasDirectives } = parseDirectives(opts.question);
+  const query = keywords(cleaned);
   const terms = query.split(' ').filter(Boolean);
-  const found = await findCandidates(opts.question);
-  const chosen = triage(found.candidates, { limit: opts.limit, perHost: opts.perHost });
+  const found = await findCandidates(cleaned);
+  const scoped = hasDirectives
+    ? applyDirectives(found.candidates, constraints)
+    : { candidates: found.candidates, applied: [], relaxed: [] };
+  const effective = scoped.candidates;
+  const chosen = triage(effective, { limit: opts.limit, perHost: opts.perHost });
 
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
@@ -136,7 +151,7 @@ async function main() {
       // who can see the discarded candidates can audit the triage decision;
       // one who is only shown the winners has to take it on trust.
       const chosenUrls = new Set(chosen.map((c) => c.url));
-      const skipped = found.candidates
+      const skipped = effective
         .filter((c) => !chosenUrls.has(c.url))
         .map((c) => ({ url: c.url, ...gradeSource(c.url) }))
         .sort((a, b) => a.tier - b.tier);
@@ -150,9 +165,17 @@ async function main() {
     }
   }
 
+  // The directive summary, if any were used: what narrowed the candidates, and
+  // which were relaxed because enforcing them would have left nothing.
+  const directiveLine = hasDirectives
+    ? `directives: ${scoped.applied.length ? `applied ${scoped.applied.join(' ')} (${found.candidates.length}→${effective.length})` : 'none narrowed the candidates'}`
+      + `${scoped.relaxed.length ? ` · relaxed ${scoped.relaxed.join(' ')} (no candidate matched)` : ''}`
+    : '';
+
   if (opts.json) {
     return out(JSON.stringify({ question: opts.question, query, kinds: kindsFor(opts.question),
-      providers: found.providers, failed: found.failed, candidates: found.candidates.length,
+      providers: found.providers, failed: found.failed, candidates: effective.length,
+      directives: hasDirectives ? { applied: scoped.applied, relaxed: scoped.relaxed, found: found.candidates.length } : null,
       certainty, conflicts, gaps: missing, sources: opened }, null, 2), 0);
   }
 
@@ -160,6 +183,7 @@ async function main() {
   lines.push(`question: ${opts.question}`);
   lines.push(`query: ${query}`);
   lines.push(`providers: ${found.providers.join(',') || 'none'}${found.failed.length ? `  unreachable: ${found.failed.join(',')}` : ''}`);
+  if (directiveLine) lines.push(directiveLine);
   lines.push('');
 
   // AXI: a definitive empty state. Silence is indistinguishable from a crash,
@@ -168,7 +192,7 @@ async function main() {
     lines.push(`sources[0]{tier,host,title}:`);
     lines.push('');
     lines.push(`could_not_establish: no source above the noise floor answered this.`);
-    lines.push(`  ${found.candidates.length} candidate(s) were found and none were relevant enough to open.`);
+    lines.push(`  ${effective.length} candidate(s) were found and none were relevant enough to open.`);
     lines.push('');
     lines.push('help[2]:');
     lines.push(`  ai-internet-search "<fewer, more distinctive words>"`);
@@ -229,7 +253,7 @@ async function main() {
   for (const c of opened) lines.push(`  ${c.tier},${c.host},${c.why},${c.url}`);
   lines.push('');
   const kb = Math.round(opened.reduce((n, s) => n + (s.bytes || 0), 0) / 1024);
-  lines.push(`triaged: ${found.candidates.length} found, ${opened.length} opened, ${found.candidates.length - opened.length} skipped before fetching${kb ? ` (${kb}kb read → ${claimRows.length} claims)` : ''}`);
+  lines.push(`triaged: ${effective.length} found, ${opened.length} opened, ${effective.length - opened.length} skipped before fetching${kb ? ` (${kb}kb read → ${claimRows.length} claims)` : ''}`);
   lines.push('');
   if (reportPath) {
     lines.push(`report: ${reportPath}`);

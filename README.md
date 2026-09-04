@@ -255,6 +255,30 @@ ai-internet-search --report "<question>"     also write a standalone HTML report
 ai-internet-search --report=out.html "<question>"  write it to a specific path
 ```
 
+### Query directives
+
+Google-style directives inside the question scope the candidates a provider
+returned, without polluting the keyword search that finds them:
+
+```sh
+ai-internet-search "postgres pooling site:github.com"
+ai-internet-search 'rate limiting -site:reddit.com intitle:"token bucket"'
+```
+
+Supported: `site:` / `-site:`, `inurl:` / `-inurl:`, `intitle:` / `-intitle:`
+(quote a phrase to keep its spaces), and `filetype:`. A `site:` value may carry
+a path (`site:github.com/torvalds`) and matches subdomains of its host.
+
+They filter the URL and title a provider already returned, so a directive costs
+no extra request. And they are **lenient**: a directive that would leave *no*
+candidate is relaxed rather than enforced, and the output names it
+(`relaxed filetype:pdf (no candidate matched)`) — returning nothing because a
+scope was too tight is the exact failure this tool exists to avoid.
+
+`after:` / `before:` are deliberately absent: a candidate carries no publish
+date, so a date filter could only be parsed and then relaxed. Recency is a real
+gap, but it belongs with the source-reading path, not here.
+
 | exit | meaning |
 |---|---|
 | `0` | success, including "found nothing" |
