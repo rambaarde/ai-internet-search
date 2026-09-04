@@ -10,6 +10,7 @@ const { mkdtempSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { gradeSource, triage } = require('../lib/sources');
 const { keywords, looksRelevant, kindsFor, languagesFor, fold } = require('../lib/search');
+const { parseDirectives, applyDirectives } = require('../lib/directives');
 
 const BIN = join(__dirname, '..', 'bin', 'ai-internet-search.js');
 let pass = 0;
@@ -94,6 +95,45 @@ is(kindsFor('should password hashing use argon2id or bcrypt').includes('academic
    'a comparison question still reaches the citation index');
 is(kindsFor('what is a mutex').includes('academic'), false,
    'a plain definition question does not pull from a citation index');
+
+// --- query directives -------------------------------------------------------
+// site:/filetype:/intitle: are pulled out of the question so they scope the
+// candidates without polluting the keyword search, and a directive that would
+// leave nothing is relaxed rather than enforced.
+{
+  const p = parseDirectives('postgres pool site:github.com -site:reddit.com filetype:pdf intitle:"tuning guide"');
+  is(p.query, 'postgres pool', 'directives are stripped from the query the providers see');
+  is(p.constraints.site.join(','), 'github.com', 'site: is parsed');
+  is(p.constraints.notSite.join(','), 'reddit.com', '-site: is parsed as an exclusion');
+  is(p.constraints.filetype.join(','), 'pdf', 'filetype: is parsed');
+  is(p.constraints.intitle.join(','), 'tuning guide', 'a quoted intitle: keeps its spaces');
+  is(p.any, 'true', 'a question with directives reports it carries some');
+  is(parseDirectives('just a plain question').any, 'false', 'a plain question carries none');
+
+  const cands = [
+    { url: 'https://github.com/supabase/supavisor', title: 'Supavisor pooler' },
+    { url: 'https://www.reddit.com/r/db/x', title: 'a reddit thread' },
+    { url: 'https://en.wikipedia.org/wiki/Connection_pool', title: 'Connection pool' },
+  ];
+  const scoped = applyDirectives(cands, parseDirectives('db site:github.com -site:reddit.com').constraints);
+  is(scoped.candidates.length, 1, 'site: keeps only the matching host');
+  is(scoped.candidates[0].url.includes('github.com'), true, 'the surviving candidate is the scoped one');
+  is(scoped.relaxed.length, 0, 'a directive that matches something is enforced, not relaxed');
+
+  // A subdomain still matches its parent site, and a host+path scope works.
+  const sub = applyDirectives([{ url: 'https://gist.github.com/x/y', title: 't' }],
+    parseDirectives('q site:github.com').constraints);
+  is(sub.candidates.length, 1, 'a subdomain matches its parent site');
+  const path = applyDirectives(cands, parseDirectives('q site:github.com/supabase').constraints);
+  is(path.candidates.length, 1, 'a site: with a path scopes to that path prefix');
+
+  // The lenient rule: a directive matching nothing is relaxed, the wider set is
+  // kept, and the relaxation is named -- returning nothing is the failure to avoid.
+  const relaxed = applyDirectives(cands, parseDirectives('db filetype:pdf').constraints);
+  is(relaxed.candidates.length, 3, 'a directive that would empty the set is relaxed, not enforced');
+  is(relaxed.relaxed.join(','), 'filetype:pdf', 'the relaxed directive is named so the caller knows');
+  is(relaxed.applied.length, 0, 'nothing is reported as applied when the only directive was relaxed');
+}
 
 // --- languages ---------------------------------------------------------------
 // The tool asked English Wikipedia and nothing else, so a question asked in
