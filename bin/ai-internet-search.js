@@ -21,6 +21,7 @@
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { findBrowser } = require('../lib/render');
+const { pick: pickWebSearch, KEYS: WEB_KEYS } = require('../lib/providers/websearch');
 const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
@@ -195,6 +196,7 @@ async function main() {
 
   // AXI: a definitive empty state. Silence is indistinguishable from a crash,
   // and a confident guess is worse than either.
+  const webKeySet = !!pickWebSearch();
   if (!opened.length) {
     lines.push(`sources[0]{tier,host,title}:`);
     lines.push('');
@@ -203,7 +205,13 @@ async function main() {
     lines.push('');
     lines.push('help[2]:');
     lines.push(`  ai-internet-search "<fewer, more distinctive words>"`);
-    lines.push(`  key-less providers have limited recall; a search API can be plugged in for better coverage`);
+    // Name the concrete fix. The key-free providers cover reference/academic
+    // topics; a general-web question needs a search API, so say which env vars
+    // turn one on -- but only when none is already set (if a key is set and it
+    // still found nothing, adding another key is not the advice).
+    lines.push(webKeySet
+      ? `  the key-free providers (Wikipedia, HN, academic) don't cover this; try built-in web search, or fewer words`
+      : `  the key-free providers cover reference/academic topics only; set one of ${WEB_KEYS.join(' / ')} for general-web recall`);
     return out(lines.join('\n'), 0);
   }
 

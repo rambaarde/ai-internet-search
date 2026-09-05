@@ -296,7 +296,32 @@ It shells out to an **already-installed** Chrome/Chromium (`--headless
 --dump-dom`) — no npm dependency, and a **no-op when no browser is present**
 (it says so rather than failing silently). Rendering is **opt-in**: the default
 path stays the fast, fetch-only one. It fixes *reading* a page, not *finding*
-one — for the discovery gap, plug in a search source.
+one — for the discovery gap, plug in a search source (below).
+
+### General-web recall: a search API key
+
+The four key-free providers (Wikipedia, OpenAlex, DOAJ, HackerNews) answer
+**reference, academic and practitioner** questions. They have no coverage of
+general-web *"how do I…"* topics, so those return `providers: none`. That is
+the recall gap the tool has always named.
+
+Set one key and a general-web provider joins the run — its results feed the
+**same source-tier ranking** as everything else (the API gives recall, the tier
+grading gives credibility; the count-based "consensus" ranking is never used):
+
+```sh
+export BRAVE_API_KEY=…      # or TAVILY_API_KEY, or SERPER_API_KEY
+ai-internet-search "how do I keep a status page realtime"
+```
+
+The first key present wins (Brave → Tavily → Serper). With **no** key set it is
+a **no-op** — the key-free providers alone, exactly as before — so it is never a
+required key.
+
+Why a key and not a scraper: keyless SERP scraping does not work from a program.
+`html.duckduckgo.com` answers a server-side request with a `202` challenge and
+Mojeek with a CAPTCHA. The engines that answer a program are the ones with an
+API.
 
 | exit | meaning |
 |---|---|
