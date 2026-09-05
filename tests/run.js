@@ -135,6 +135,28 @@ is(kindsFor('what is a mutex').includes('academic'), false,
   is(relaxed.applied.length, 0, 'nothing is reported as applied when the only directive was relaxed');
 }
 
+// --- optional keyed web search ----------------------------------------------
+// General-web recall the key-free providers cannot give. Keyless SERP scraping
+// is bot-walled (DuckDuckGo answers a 202 challenge, Mojeek a CAPTCHA), so this
+// is a keyed API, and it must stay a no-op until a key is set -- never a
+// required key. The live API calls need a real key, so only the env logic and
+// the no-op are asserted here; the adapters run wherever a key exists.
+{
+  const { pick, webSearchProvider, KEYS } = require('../lib/providers/websearch');
+  is(pick({}), 'null', 'no key configured means no web-search provider');
+  is(pick({ BRAVE_API_KEY: 'x' }).engine, 'brave', 'BRAVE_API_KEY selects Brave');
+  is(pick({ TAVILY_API_KEY: 'x' }).engine, 'tavily', 'TAVILY_API_KEY selects Tavily');
+  is(pick({ SERPER_API_KEY: 'x' }).engine, 'serper', 'SERPER_API_KEY selects Serper');
+  is(pick({ BRAVE_SEARCH_API_KEY: 'x' }).engine, 'brave', 'the alternate BRAVE_SEARCH_API_KEY spelling also works');
+  is(pick({ BRAVE_API_KEY: 'b', TAVILY_API_KEY: 't', SERPER_API_KEY: 's' }).engine, 'brave',
+     'with several keys the first in priority order wins, deterministically');
+  is(KEYS.join(','), 'BRAVE_API_KEY,TAVILY_API_KEY,SERPER_API_KEY', 'KEYS names the env vars the empty-state hint points at');
+  is(webSearchProvider.kinds.length, 3, 'web search is eligible for every question kind');
+  // pick({}) === null above is the whole no-op contract: run() returns [] iff
+  // pick() is null. The live API path (a real key present) is exercised only
+  // where a key exists, like the network and render tests.
+}
+
 // --- languages ---------------------------------------------------------------
 // The tool asked English Wikipedia and nothing else, so a question asked in
 // Tagalog or Japanese was answered from a corpus that mostly does not discuss
