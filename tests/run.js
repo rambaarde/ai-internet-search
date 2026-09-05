@@ -150,8 +150,15 @@ is(kindsFor('what is a mutex').includes('academic'), false,
   is(pick({ BRAVE_SEARCH_API_KEY: 'x' }).engine, 'brave', 'the alternate BRAVE_SEARCH_API_KEY spelling also works');
   is(pick({ BRAVE_API_KEY: 'b', TAVILY_API_KEY: 't', SERPER_API_KEY: 's' }).engine, 'brave',
      'with several keys the first in priority order wins, deterministically');
-  is(KEYS.join(','), 'BRAVE_API_KEY,TAVILY_API_KEY,SERPER_API_KEY', 'KEYS names the env vars the empty-state hint points at');
+  // Google Programmable Search (the free-forever, 100/day option) needs BOTH a
+  // key and a search-engine id -- one alone must not select it.
+  is(pick({ GOOGLE_SEARCH_API_KEY: 'k' }), 'null', 'a Google key without a cx does not select Google');
+  is(pick({ GOOGLE_SEARCH_API_KEY: 'k', GOOGLE_SEARCH_CX: 'c' }).engine, 'google', 'a Google key + cx selects Google');
+  is(KEYS.includes('GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX'), true, 'KEYS names the Google key pair for the empty-state hint');
   is(webSearchProvider.kinds.length, 3, 'web search is eligible for every question kind');
+  // Marginalia is keyless but OPT-IN, so it never taxes the default fast path.
+  const { marginaliaProvider } = require('../lib/providers/websearch');
+  is(marginaliaProvider.kinds.length, 3, 'marginalia is eligible for every question kind');
   // pick({}) === null above is the whole no-op contract: run() returns [] iff
   // pick() is null. The live API path (a real key present) is exercised only
   // where a key exists, like the network and render tests.

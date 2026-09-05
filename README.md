@@ -305,23 +305,34 @@ The four key-free providers (Wikipedia, OpenAlex, DOAJ, HackerNews) answer
 general-web *"how do I…"* topics, so those return `providers: none`. That is
 the recall gap the tool has always named.
 
-Set one key and a general-web provider joins the run — its results feed the
-**same source-tier ranking** as everything else (the API gives recall, the tier
-grading gives credibility; the count-based "consensus" ranking is never used):
+Enable one general-web provider and its results feed the **same source-tier
+ranking** as everything else (the provider gives recall, the tier grading gives
+credibility; the count-based "consensus" ranking is never used). All are
+**no-op until enabled**, so none is ever required.
+
+**Free forever, no card:**
 
 ```sh
-export BRAVE_API_KEY=…      # or TAVILY_API_KEY, or SERPER_API_KEY
+export MARGINALIA=1        # keyless, zero setup, independent index (indie/blog-leaning)
+export GOOGLE_SEARCH_API_KEY=…  GOOGLE_SEARCH_CX=…   # real Google, 100 queries/day free
 ai-internet-search "how do I keep a status page realtime"
 ```
 
-The first key present wins (Brave → Tavily → Serper). With **no** key set it is
-a **no-op** — the key-free providers alone, exactly as before — so it is never a
-required key.
+- **`MARGINALIA=1`** — keyless, no account, unlimited. Its index is small and
+  indie-web, so it covers tech/blog topics well and mainstream/ops topics
+  thinly. Being keyless it is **opt-in**, so it never taxes the default path.
+- **Google Programmable Search** — real Google results, **100/day free forever,
+  no card** (needs a one-time key + a "search the whole web" engine id `cx`).
 
-Why a key and not a scraper: keyless SERP scraping does not work from a program.
-`html.duckduckgo.com` answers a server-side request with a `202` challenge and
-Mojeek with a CAPTCHA. The engines that answer a program are the ones with an
-API.
+**Paid tiers, higher volume:** `BRAVE_API_KEY`, `TAVILY_API_KEY`, or
+`SERPER_API_KEY`. The first keyed provider present wins, in the order
+Brave → Tavily → Serper → Google.
+
+Why a key/instance and not a plain scraper: keyless SERP scraping does not work
+from a program. `html.duckduckgo.com` answers a server-side request with a `202`
+challenge and Mojeek with a CAPTCHA. The engines that answer a program are the
+ones with an API (or, like Marginalia, a public API key that ships in the
+request).
 
 | exit | meaning |
 |---|---|
