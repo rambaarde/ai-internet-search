@@ -300,10 +300,11 @@ one — for the discovery gap, plug in a search source (below).
 
 ### General-web recall: a search API key
 
-The four key-free providers (Wikipedia, OpenAlex, DOAJ, HackerNews) answer
-**reference, academic and practitioner** questions. They have no coverage of
-general-web *"how do I…"* topics, so those return `providers: none`. That is
-the recall gap the tool has always named.
+The key-free providers (Wikipedia, OpenAlex, DOAJ, HackerNews, GitHub issues,
+Stack Overflow) answer **reference, academic, practitioner and bug-diagnosis**
+questions. They have no coverage of general-web *"how do I…"* topics, so
+those return `providers: none`. That is the recall gap the tool has always
+named.
 
 Enable one general-web provider and its results feed the **same source-tier
 ranking** as everything else (the provider gives recall, the tier grading gives
@@ -400,8 +401,9 @@ Follows [AXI](https://axi.md/) conventions for agent-ergonomic CLIs:
 
 ## Sources
 
-Key-less by default: Hacker News, Wikipedia, OpenAlex. No signup between an
-agent and its first useful answer.
+Key-less by default: Hacker News, Wikipedia, OpenAlex, DOAJ, GitHub issues,
+Stack Overflow. No signup between an agent and its first useful answer.
+`GITHUB_TOKEN`, when set, raises GitHub's search limit from 10 to 30 requests/min.
 
 The trade is **recall** — key-less providers miss things a paid index would
 find, and the tool tells you when that happens rather than inventing an answer.
