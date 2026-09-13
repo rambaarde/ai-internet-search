@@ -164,6 +164,24 @@ is(kindsFor('what is a mutex').includes('academic'), false,
   // where a key exists, like the network and render tests.
 }
 
+// --- issue trackers and practitioner Q&A --------------------------------------
+// A bug-diagnosis question found no sources because no key-free provider
+// searched GitHub issues or Stack Overflow, although sources.js already ranked
+// both. Stack Overflow pages 403 a plain fetch, so they are read via its API.
+{
+  const { PROVIDERS } = require('../lib/search');
+  const { stackOverflowApi } = require('../lib/extract');
+  for (const name of ['github', 'stackexchange']) {
+    const p = PROVIDERS.find((x) => x.name === name);
+    is(p && p.kinds.includes('engineering'), true, `${name} is a key-free engineering provider`);
+  }
+  is(stackOverflowApi('https://stackoverflow.com/questions/25448361/whats-the-risk'),
+     'https://api.stackexchange.com/2.3/questions/25448361/answers?filter=withbody&sort=votes&pagesize=5&site=stackoverflow',
+     'a Stack Overflow question page is read through the answers API');
+  is(stackOverflowApi('https://stackoverflow.com/users/400790/peter'), 'null', 'a non-question Stack Overflow URL is fetched as a page');
+  is(stackOverflowApi('https://example.com/questions/1'), 'null', 'other hosts are fetched as pages');
+}
+
 // --- languages ---------------------------------------------------------------
 // The tool asked English Wikipedia and nothing else, so a question asked in
 // Tagalog or Japanese was answered from a corpus that mostly does not discuss
