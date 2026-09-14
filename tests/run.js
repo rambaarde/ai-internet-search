@@ -531,6 +531,13 @@ function finish() {
   is(await renderPage('data:text/html,<h1>x</h1>', { bin: '/no/such/browser' }), null,
      'renderPage returns null when the browser binary does not exist');
 
+  // --browser: the same null contract when the user's browser is not there.
+  const { cdpProblem } = require('../lib/render');
+  is(await renderPage('data:text/html,<h1>x</h1>', { browserUrl: 'http://127.0.0.1:1' }), null,
+     'renderPage returns null when no DevTools endpoint answers at --browser');
+  is(await cdpProblem('http://127.0.0.1:1') !== '', true,
+     'cdpProblem names the problem when --browser cannot be reached, so the CLI can say so');
+
   // A source that only JavaScript can fill: fetch sees the empty shell, and
   // WITHOUT --render it stays dropped -- rendering is opt-in, never automatic.
   const jsShell = '<html><body><div id="root"></div><script>document.getElementById("root")'
@@ -550,7 +557,7 @@ function finish() {
   // page is a data: URL -- but it needs a real Chrome, so it skips like the
   // offline tests below when none is installed.
   {
-    const { findBrowser, renderPage } = require('../lib/render');
+    const { findBrowser, renderPage, cdpProblem } = require('../lib/render');
     const { extractClaims } = require('../lib/extract');
     const jsShell = '<html><body><div id="root"></div><script>document.getElementById("root")'
       + '.innerHTML="The connection pool should be set to ten connections for this workload.";</script></body></html>';
@@ -574,6 +581,42 @@ function finish() {
       is(rescued.read, true, 'with --render, a client-rendered page is rescued through the browser');
       is(rescued.rendered, true, 'a rescued source is marked as rendered, so the reader knows how it was read');
       is(rescued.claims.length >= 1, true, 'the browser-rendered claim is extracted like any other');
+
+      // --browser against a real running Chrome with a DevTools port. Port 0
+      // lets Chrome pick a free one and write it to DevToolsActivePort, so a
+      // developer's own Chrome on 9222 is never touched.
+      if (typeof WebSocket !== 'function') {
+        console.log('skip - --browser tests (this Node has no built-in WebSocket)');
+      } else {
+        const { spawn } = require('node:child_process');
+        const profile = sandbox();
+        const chrome = spawn(findBrowser(), ['--headless', '--remote-debugging-port=0',
+          `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+        // Killed in finally: a throw here must not leave a Chrome running.
+        try {
+          let port = '';
+          for (let i = 0; i < 50 && !port; i++) {
+            await new Promise((r) => setTimeout(r, 200));
+            try { port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch { /* not yet */ }
+          }
+          const browserUrl = `http://127.0.0.1:${port}`;
+          is(await cdpProblem(browserUrl), '', 'cdpProblem finds a running Chrome DevTools endpoint');
+          // The user's browser can read local files; a search result must never
+          // open one. Checked against a live browser, which WOULD render the file.
+          is(await renderPage('file:///etc/hosts', { browserUrl }), null,
+             'renderPage never opens a non-web URL in the user\'s browser');
+          const viaCdp = await extractClaims(rsrc, ['connection', 'pool'], { render: true, browser: browserUrl });
+          is(viaCdp.read && viaCdp.rendered, true, 'with --browser, a client-rendered page is rescued through the running browser');
+          has(viaCdp.claims.map((c) => c.text).join(' '), 'ten connections', 'the claim came from the page JavaScript, run in that browser');
+          const tabs = await (await fetch(`${browserUrl}/json/list`)).json();
+          is(tabs.some((t) => t.url.startsWith('data:')), false, 'the tab opened for the source is closed afterwards');
+        } finally {
+          // A Chrome that already exited never emits 'exit' again; waiting would hang the suite.
+          if (chrome.exitCode === null && chrome.signalCode === null) {
+            await new Promise((r) => { chrome.once('exit', r); chrome.kill(); });
+          }
+        }
+      }
     }
   }
 

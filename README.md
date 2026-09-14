@@ -298,6 +298,32 @@ It shells out to an **already-installed** Chrome/Chromium (`--headless
 path stays the fast, fetch-only one. It fixes *reading* a page, not *finding*
 one — for the discovery gap, plug in a search source (below).
 
+### Reading through your own browser: `--browser`
+
+`--browser URL` does the same retry as `--render`, but in **your running
+Chrome**, over the Chrome DevTools Protocol. The page opens in a background
+tab with that browser's cookies and logins, and the tab closes after the read.
+A page that refuses a headless bot can open for you.
+
+```sh
+# Chrome refuses remote debugging on your default profile, so use a separate one.
+# Log in to the sites you need in that window once; the profile keeps the sessions.
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 --user-data-dir="$HOME/.ai-internet-search-chrome"
+
+ai-internet-search --browser http://127.0.0.1:9222 "..."
+```
+
+- It uses Node's built-in WebSocket, so it needs **Node 22+** and adds no npm
+  dependency. On an older Node, or when nothing answers at the URL, the output
+  says so and the source stays dropped.
+- Only `http:`, `https:` and `data:` URLs are opened. A search result can never
+  make it open `file:` or `chrome:` pages in your browser.
+- Anything on a page that your login lets you see can go into the claims.
+  Give the research profile only the logins you want the tool to use.
+- The DevTools port lets any local process control that browser. Close that
+  Chrome when you are done.
+
 ### General-web recall: a search API key
 
 The key-free providers (Wikipedia, OpenAlex, DOAJ, HackerNews, GitHub issues,
