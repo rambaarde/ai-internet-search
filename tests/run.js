@@ -608,6 +608,15 @@ function finish() {
           const viaCdp = await extractClaims(rsrc, ['connection', 'pool'], { render: true, browser: browserUrl });
           is(viaCdp.read && viaCdp.rendered, true, 'with --browser, a client-rendered page is rescued through the running browser');
           has(viaCdp.claims.map((c) => c.text).join(' '), 'ten connections', 'the claim came from the page JavaScript, run in that browser');
+          // A bot check that a real browser passes shows its own page first and the
+          // real page seconds later (Cloudflare: ~5s, measured). Simulated here:
+          // the check page becomes the answer after 3s.
+          const botCheck = '<html><head><title>Just a moment...</title></head><body><p>Performing security verification</p>'
+            + '<script>setTimeout(() => { document.title = "Pool guide"; document.body.innerHTML = '
+            + '"<p>The connection pool should be set to ten connections for this workload.</p>"; }, 3000);</script></body></html>';
+          const viaCheck = await renderPage('data:text/html,' + encodeURIComponent(botCheck), { browserUrl });
+          // The title, not the sentence: the sentence is also in the check page's own script.
+          has(viaCheck, '<title>Pool guide</title>', 'with --browser, the real page behind a bot check is read, not the check page');
           const tabs = await (await fetch(`${browserUrl}/json/list`)).json();
           is(tabs.some((t) => t.url.startsWith('data:')), false, 'the tab opened for the source is closed afterwards');
         } finally {
