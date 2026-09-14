@@ -20,7 +20,7 @@
 
 const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
-const { findBrowser } = require('../lib/render');
+const { findBrowser, cdpProblem } = require('../lib/render');
 const { pick: pickWebSearch } = require('../lib/providers/websearch');
 const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
@@ -59,6 +59,9 @@ flags:
   --plan          triage only; never opens a source
   --render        retry a client-rendered or 403 source in a headless browser
                   (uses an already-installed Chrome/Chromium; no-op if none)
+  --browser URL   like --render, but in YOUR running Chrome over DevTools, with
+                  its logins (start it with --remote-debugging-port=9222
+                  --user-data-dir=DIR; URL e.g. http://127.0.0.1:9222; Node 22+)
   --limit N       maximum sources to open (default 3)
   --per-host N    maximum sources per host (default 1)
   --json          emit JSON instead of TOON
@@ -71,7 +74,7 @@ exit codes:
   0 success   1 error   2 bad usage`;
 
 function parseArgs(argv) {
-  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null, render: false };
+  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null, render: false, browser: '' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -79,6 +82,12 @@ function parseArgs(argv) {
     if (a === '--version' || a === '-V') return { version: true };
     else if (a === '--plan') opts.plan = true;
     else if (a === '--render') opts.render = true;
+    else if (a === '--browser') {
+      // A missing URL must not quietly fall back to the headless browser.
+      opts.browser = argv[++i] || '';
+      if (!opts.browser) return { badFlag: '--browser (needs a URL, e.g. http://127.0.0.1:9222)' };
+      opts.render = true;
+    }
     else if (a === '--json') opts.json = true;
     else if (a === '--report' || a.startsWith('--report=')) {
       // `=` only, never a bare next argument: the question itself is a bare
@@ -133,7 +142,7 @@ async function main() {
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
   const opened = opts.plan ? chosen.map((c) => ({ ...c, read: false, reason: 'not fetched (--plan)', claims: [] }))
-                           : await readSources(chosen, terms, { render: opts.render });
+                           : await readSources(chosen, terms, { render: opts.render, browser: opts.browser });
   const conflicts = opts.plan ? [] : findConflicts(opened);
   const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
@@ -150,6 +159,7 @@ async function main() {
       const flags = [
         opts.limit !== 3 ? `--limit ${opts.limit}` : '',
         opts.perHost !== 1 ? `--per-host ${opts.perHost}` : '',
+        opts.browser ? `--browser ${opts.browser}` : opts.render ? '--render' : '',
         '--report',
       ].filter(Boolean).join(' ');
       // What was NOT opened, and why it was ranked below what was. A reader
@@ -191,7 +201,10 @@ async function main() {
   if (directiveLine) lines.push(directiveLine);
   // Say it plainly when --render was asked for but cannot happen: a silent
   // no-op would look like rendering was tried and failed.
-  if (opts.render && !findBrowser()) lines.push('render: requested, but no Chrome/Chromium was found — install one, or drop --render');
+  if (opts.browser) {
+    const problem = await cdpProblem(opts.browser);
+    if (problem) lines.push(`browser: requested, but ${problem} — start Chrome with --remote-debugging-port=9222 --user-data-dir=DIR, or drop --browser`);
+  } else if (opts.render && !findBrowser()) lines.push('render: requested, but no Chrome/Chromium was found — install one, or drop --render');
   lines.push('');
 
   // AXI: a definitive empty state. Silence is indistinguishable from a crash,
