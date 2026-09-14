@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.5.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.4.0...ai-internet-search-v0.5.0) (2026-09-14)
+
+
+### Features
+
+* **extract:** score a claim on self-containment and on definition form ([cbe382a](https://github.com/rambaarde/ai-internet-search/commit/cbe382a493cbce2d8be7304c8129d98a86d49f60))
+* **extract:** score claims on self-containment and report client-rendered pages as unread ([515c38c](https://github.com/rambaarde/ai-internet-search/commit/515c38c6cd6475879e7e78f8285d0451d6736de1))
+* **extract:** score claims on self-containment and report client-rendered pages as unread ([216a399](https://github.com/rambaarde/ai-internet-search/commit/216a3996b0e00b5f407d151620497c7fd0b78d03))
+* free-forever web search — keyless Marginalia + Google Programmable Search ([68f30b7](https://github.com/rambaarde/ai-internet-search/commit/68f30b7b7482a8627d8919f41b925ac0e71d78a5))
+* free-forever web search — keyless Marginalia + Google Programmable Search ([ea8b59f](https://github.com/rambaarde/ai-internet-search/commit/ea8b59f4ff20570799b518f9f8f513fa85d3c7b8))
+* free-forever web search providers (Marginalia + Google Programmable Search) ([99f25ec](https://github.com/rambaarde/ai-internet-search/commit/99f25ec26f5a59430927c7a2b9131f3cbdf8b2bc))
+* Google-style query directives with a lenient post-filter ([f186d36](https://github.com/rambaarde/ai-internet-search/commit/f186d367404eb5a01a6bca588f2b043fca06994f))
+* Google-style query directives with a lenient post-filter ([32d639e](https://github.com/rambaarde/ai-internet-search/commit/32d639e719ce9fc04ae3937568e5fad63cc973d0))
+* Google-style query directives with a lenient post-filter ([074ee79](https://github.com/rambaarde/ai-internet-search/commit/074ee796b56199ae49b1b1939f6bb9cbe5f8b995))
+* optional headless-browser render (--render) ([51c15e2](https://github.com/rambaarde/ai-internet-search/commit/51c15e267f1713563861541d19b2b5eeb749821f))
+* optional headless-browser render (--render) for pages fetch cannot read ([449810e](https://github.com/rambaarde/ai-internet-search/commit/449810eba9d8a3eb29c1109638729369cae8fd40))
+* optional headless-browser render for pages fetch cannot read (--render) ([9872a3e](https://github.com/rambaarde/ai-internet-search/commit/9872a3e384fa8332a9e4d447a062c88f905f9d5b))
+* optional keyed web-search providers (general-web recall) ([e4e833e](https://github.com/rambaarde/ai-internet-search/commit/e4e833ed22a992562901eb842cec56d90d34157b))
+* optional keyed web-search providers (general-web recall) ([14a5d21](https://github.com/rambaarde/ai-internet-search/commit/14a5d21c05982d683be9dc2fe44ab651dfd821a8))
+* optional keyed web-search providers for general-web recall ([cc73843](https://github.com/rambaarde/ai-internet-search/commit/cc73843d54f10eae3d4cd983eff633f7afae6504))
+* **render:** read pages through the user's running Chrome with --browser ([65a4f9e](https://github.com/rambaarde/ai-internet-search/commit/65a4f9eba3178c2b9f5a426f4282c948bc19a346))
+* **render:** read pages through the user's running Chrome with --browser ([5ba1227](https://github.com/rambaarde/ai-internet-search/commit/5ba1227b872d4852a736f43cc0adf38cfcb4b816))
+* **render:** read pages through the user's running Chrome with --browser ([e6fba85](https://github.com/rambaarde/ai-internet-search/commit/e6fba85ffde5d7a17a43934c91564b07f446abd4))
+* **search:** add GitHub issues and Stack Overflow as key-free providers ([60cd4f8](https://github.com/rambaarde/ai-internet-search/commit/60cd4f802b52039d7599e207b2e6b979483e64da))
+* **search:** add GitHub issues and Stack Overflow as key-free providers ([9b7a2e3](https://github.com/rambaarde/ai-internet-search/commit/9b7a2e33c3a768c29fb7a8800730215b7bd17bba))
+* **search:** add GitHub issues and Stack Overflow as key-free providers ([8599f70](https://github.com/rambaarde/ai-internet-search/commit/8599f70e135e57e1c85c9763db3cb672bdb0aca8))
+
+
+### Bug Fixes
+
+* **extract:** report a client-rendered page as unread, not as silent ([4666025](https://github.com/rambaarde/ai-internet-search/commit/4666025398bb636d47fe7bb28cc19197c71fbb42))
+* **render:** wait for the real page behind a bot check in --browser ([22c118e](https://github.com/rambaarde/ai-internet-search/commit/22c118e21218a7069997b09cc812674fa26d5046))
+* **render:** wait for the real page behind a bot check in --browser ([be85853](https://github.com/rambaarde/ai-internet-search/commit/be85853f89eb617d1131703725bb8b2718b6bbc8))
+* **render:** wait for the real page behind a bot check in --browser ([be211b0](https://github.com/rambaarde/ai-internet-search/commit/be211b004d5829a54360b9e1b2ba6533623b91c6))
+* **search:** stop hiding the citation index from comparison questions ([4b5a9d1](https://github.com/rambaarde/ai-internet-search/commit/4b5a9d11ee19cc085de885b284e4b169424db9fa))
+* **search:** stop hiding the citation index from comparison questions ([e810f51](https://github.com/rambaarde/ai-internet-search/commit/e810f51701a30f852b92f0c9cdc23225bde8bd9b))
+* **search:** stop hiding the citation index from comparison questions ([a5db274](https://github.com/rambaarde/ai-internet-search/commit/a5db274606f04ab1854f81816e3dd04015558cfb))
+
 ## [0.4.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.3.1...ai-internet-search-v0.4.0) (2026-09-03)
 
 
