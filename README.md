@@ -108,6 +108,41 @@ The shaded boxes are the three that matter: ranking before reading anything
 (the accuracy mechanism and the token saving, at once), a conflict shown
 rather than blended, and an empty result that says it is empty.
 
+### Typed workflow decisions
+
+The pipeline also emits a small, bounded decision object. It is deliberately
+deterministic in this open-source implementation, so it can be audited and
+tested without a model dependency:
+
+```text
+query_kind: definition | engineering | academic
+decision: answer | search_more | escalate_uncertainty | inspect_plan
+evidence_sufficient: 0..1
+```
+
+The same decision is available in CLI TOON output, `--json`, and the MCP
+`research` tool. A future local model can replace the heuristic evaluator
+behind `lib/decisions.js` without changing the output contract.
+
+The decision layer also keeps a review band around binary judgments. Its
+illustrative default is `< 0.30 → no`, `0.30–0.70 → uncertain`, and
+`> 0.70 → yes`; uncertain evidence should be escalated instead of forcing two
+near-identical probabilities into opposite actions. These are starting values,
+not calibration guarantees: tune them against labeled examples and the cost of
+wrong automation versus human review. This pattern is adapted from TypeSafe's
+[self-consistency cookbook](https://docs.typesafe.ai/cookbooks/consistency_noul_cookbook).
+
+The research plan now also exposes four Jev-inspired controls:
+
+- intent routing chooses a reference, engineering, or academic handler;
+- provider fan-out runs eligible providers in parallel;
+- composite source scoring considers authority, title relevance, and URL freshness;
+- optional consistency checks can mark repeated borderline outputs unstable.
+
+Authority remains the primary sort key. The composite score only breaks ties
+and explains the selection; it never lets a low-authority page outrank a
+higher-authority source because it matches more keywords.
+
 | tier | source | why |
 |---|---|---|
 | 1 | official docs, specs, RFCs, source, changelogs, registries | the thing itself |
