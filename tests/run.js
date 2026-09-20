@@ -8,9 +8,10 @@ const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
 const { mkdtempSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
-const { gradeSource, triage } = require('../lib/sources');
+const { gradeSource, scoreSource, triage } = require('../lib/sources');
 const { keywords, looksRelevant, kindsFor, languagesFor, fold } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
+const { choice, score, noul, uncertaintyBand, decideQuery, decideResearch, consistencyCheck } = require('../lib/decisions');
 
 const BIN = join(__dirname, '..', 'bin', 'ai-internet-search.js');
 let pass = 0;
@@ -21,6 +22,45 @@ const nok = (m, d) => { console.log('NOT OK - ' + m + (d ? ` (${d})` : '')); fai
 const is = (a, b, m) => (String(a) === String(b) ? ok(m) : nok(m, `got [${a}] want [${b}]`));
 const has = (s, sub, m) => (String(s).includes(sub) ? ok(m) : nok(m, `missing [${sub}]`));
 const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpected [${sub}]`));
+
+// --- typed decisions -------------------------------------------------------
+{
+  const c = choice('route', 'docs', { docs: 0.8, forum: 0.2 }, 0.8);
+  is(c.type, 'choice', 'choice decisions carry their primitive type');
+  is(c.value, 'docs', 'choice decisions carry a bounded value');
+  is(score('relevance', 1.4, 0, 1).value, '1', 'score decisions stay inside their declared scale');
+  is(noul('sufficient', -1).value, '0', 'noul decisions stay inside probability bounds');
+  is(uncertaintyBand('review', 0.2).value, 'no', 'low probabilities stay below the automatic yes threshold');
+  is(uncertaintyBand('review', 0.5).value, 'uncertain', 'borderline probabilities become uncertain');
+  is(uncertaintyBand('review', 0.8).value, 'yes', 'high probabilities clear the automatic yes threshold');
+  is(consistencyCheck(['a', 'a', 'b'], { kind: 'choice' }).stable, true, 'repeated choices can be consistency-checked');
+  is(consistencyCheck([0.48, 0.52], { kind: 'noul' }).stable, true, 'close probabilities can remain stable');
+  is(consistencyCheck([0.1, 0.9], { kind: 'noul' }).stable, false, 'wide probability spread is unstable');
+  is(decideQuery('what is a mutex', ['definition']).queryKind.value, 'definition', 'query decisions identify definition work');
+  is(decideQuery('how do I debug a postgres connection pool', ['engineering']).queryKind.value, 'engineering', 'query decisions identify engineering work');
+  is(decideQuery('what is a mutex', ['definition']).handler.value, 'reference_sources', 'intent routes definitions to reference sources');
+  is(decideQuery('benchmark rate limiters', ['academic']).fanOut.parallel, true, 'intent routing exposes parallel provider fan-out');
+  is(decideResearch({ opened: [], conflicts: [], certainty: { level: 'none' }, missing: {} }).nextAction.value,
+     'search_more', 'empty evidence asks the workflow to search more');
+  is(decideResearch({ opened: [{}], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).nextAction.value,
+     'escalate_uncertainty', 'conflicting evidence escalates uncertainty');
+  is(decideResearch({ opened: [{}], conflicts: [], certainty: { level: 'high' }, missing: { missingTerms: [] } }).nextAction.value,
+     'answer', 'strong complete evidence permits an answer');
+  is(decideResearch({ opened: [{}], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).evidenceSufficient.value,
+     'uncertain', 'conflicting evidence enters the review band');
+}
+
+// --- composite source scoring ----------------------------------------------
+{
+  const official = scoreSource({ url: 'https://docs.example.dev/docs/connection-pool', title: 'Connection pool configuration' }, ['connection', 'pool']);
+  const vague = scoreSource({ url: 'https://medium.com/@x/unrelated-2020-guide', title: 'A guide to something else' }, ['connection', 'pool']);
+  ok(official.score > vague.score ? 'official relevant sources outrank vague aggregators' : 'x');
+  is(triage([
+    { url: 'https://docs.example.dev/docs/connection-pool', title: 'Connection pool configuration' },
+    { url: 'https://docs.example.dev/docs/other', title: 'Other documentation' },
+  ], { limit: 2, perHost: 2, terms: ['connection', 'pool'] })[0].score > 0.5, true,
+  'triage carries an inspectable composite score');
+}
 
 function run(args, expectCode, opts = {}) {
   try {

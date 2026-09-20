@@ -25,6 +25,7 @@ const { pick: pickWebSearch } = require('../lib/providers/websearch');
 const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
+const { decideQuery, decideResearch } = require('../lib/decisions');
 const { renderReport } = require('../lib/report');
 const { writeFileSync, statSync } = require('node:fs');
 const { join } = require('node:path');
@@ -132,12 +133,13 @@ async function main() {
   const { query: cleaned, constraints, any: hasDirectives } = parseDirectives(opts.question);
   const query = keywords(cleaned);
   const terms = query.split(' ').filter(Boolean);
-  const found = await findCandidates(cleaned);
+  const queryDecision = decideQuery(opts.question, kindsFor(opts.question));
+  const found = await findCandidates(cleaned, { kinds: queryDecision.providerKinds });
   const scoped = hasDirectives
     ? applyDirectives(found.candidates, constraints)
     : { candidates: found.candidates, applied: [], relaxed: [] };
   const effective = scoped.candidates;
-  const chosen = triage(effective, { limit: opts.limit, perHost: opts.perHost });
+  const chosen = triage(effective, { limit: opts.limit, perHost: opts.perHost, terms });
 
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
@@ -146,6 +148,7 @@ async function main() {
   const conflicts = opts.plan ? [] : findConflicts(opened);
   const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
+  const researchDecision = decideResearch({ plan: opts.plan, opened, conflicts, certainty, missing });
 
   // A file, never stdout. An agent piping markup back into its own context
   // would pay exactly the cost this tool exists to avoid, so it gets a path.
@@ -191,12 +194,13 @@ async function main() {
     return out(JSON.stringify({ question: opts.question, query, kinds: kindsFor(opts.question),
       providers: found.providers, failed: found.failed, candidates: effective.length,
       directives: hasDirectives ? { applied: scoped.applied, relaxed: scoped.relaxed, found: found.candidates.length } : null,
-      certainty, conflicts, gaps: missing, sources: opened }, null, 2), 0);
+      certainty, decisions: { query: queryDecision, research: researchDecision }, conflicts, gaps: missing, sources: opened }, null, 2), 0);
   }
 
   const lines = [];
   lines.push(`question: ${opts.question}`);
   lines.push(`query: ${query}`);
+  lines.push(`handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`);
   lines.push(`providers: ${found.providers.join(',') || 'none'}${found.failed.length ? `  unreachable: ${found.failed.join(',')}` : ''}`);
   if (directiveLine) lines.push(directiveLine);
   // Say it plainly when --render was asked for but cannot happen: a silent
@@ -230,6 +234,7 @@ async function main() {
 
   // Certainty first: it changes how everything below should be read.
   lines.push(`certainty: ${certainty.level} — ${certainty.why}`);
+  lines.push(`decision: ${researchDecision.nextAction.value} — ${researchDecision.nextAction.why}`);
   lines.push('');
 
   const claimRows = [];

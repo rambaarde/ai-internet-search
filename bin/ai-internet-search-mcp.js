@@ -19,6 +19,7 @@ const { findCandidates, keywords, kindsFor } = require('../lib/search');
 const { triage } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
+const { decideQuery, decideResearch } = require('../lib/decisions');
 
 const VERSION = require('../package.json').version;
 
@@ -73,18 +74,25 @@ const TOOLS = [
 async function research(question, { limit = 3, plan = false } = {}) {
   const query = keywords(question);
   const terms = query.split(' ').filter(Boolean);
-  const found = await findCandidates(question);
-  const chosen = triage(found.candidates, { limit, perHost: 1 });
+  const queryDecision = decideQuery(question, kindsFor(question));
+  const found = await findCandidates(question, { kinds: queryDecision.providerKinds });
+  const chosen = triage(found.candidates, { limit, perHost: 1, terms });
 
   if (!chosen.length) {
+    const decision = decideResearch({ opened: [], conflicts: [], certainty: { level: 'none' }, missing: {} });
     return (
+      `decision: ${decision.nextAction.value} — ${decision.nextAction.why}\n` +
       `could_not_establish: nothing above the noise floor answered this.\n` +
       `${found.candidates.length} candidate(s) found, none relevant enough to open.\n` +
       `Try fewer, more distinctive words.`
     );
   }
   if (plan) {
+    const decision = decideResearch({ plan: true, opened: [], conflicts: [], certainty: { level: 'n/a' }, missing: {} });
     return (
+      `query_kind: ${queryDecision.queryKind.value}\n` +
+      `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})\n` +
+      `decision: ${decision.nextAction.value} — ${decision.nextAction.why}\n` +
       `would_read[${chosen.length}]{tier,host,why,url}:\n` +
       chosen.map((c) => `  ${c.tier},${c.host},${c.why},${c.url}`).join('\n') +
       `\n\nnothing was fetched. ${found.candidates.length} found, ${chosen.length} would be opened.`
@@ -95,8 +103,9 @@ async function research(question, { limit = 3, plan = false } = {}) {
   const conflicts = findConflicts(opened);
   const certainty = grade(opened, conflicts);
   const missing = gaps(opened, terms);
+  const decision = decideResearch({ opened, conflicts, certainty, missing });
 
-  const out = [`certainty: ${certainty.level} — ${certainty.why}`, ''];
+  const out = [`query_kind: ${queryDecision.queryKind.value}`, `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`, `decision: ${decision.nextAction.value} — ${decision.nextAction.why}`, `certainty: ${certainty.level} — ${certainty.why}`, ''];
   const rows = [];
   for (const s of opened) for (const c of s.claims) rows.push(`  ${s.tier},${s.host},${c.text.replace(/[\n,]/g, ' ')}`);
   out.push(`claims[${rows.length}]{tier,host,claim}:`, ...rows, '');
