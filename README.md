@@ -2,493 +2,288 @@
 
 **Internet research for AI agents that is defensible, not just cheap.**
 
-Ranks sources by credibility instead of counting them, shows disagreement
-instead of averaging it, and says what it could not establish.
+`ai-internet-search` finds candidate pages, ranks them by source quality before
+reading them, quotes evidence, surfaces disagreement, and says what it could
+not establish. It is a zero-runtime-dependency Node.js CLI and MCP server for
+agents that need useful research without hiding uncertainty behind a majority
+vote.
+
+[![npm version](https://img.shields.io/npm/v/ai-internet-search?label=npm)](https://www.npmjs.com/package/ai-internet-search)
+[![CI](https://github.com/rambaarde/ai-internet-search/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rambaarde/ai-internet-search/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/rambaarde/ai-internet-search)](https://github.com/rambaarde/ai-internet-search/blob/main/LICENSE)
+
+## Quick start
+
+Requires Node.js 18 or newer.
+
+```sh
+npm install -g ai-internet-search
+ai-internet-search "what is a connection pool"
+```
+
+Or run it without installing:
 
 ```sh
 npx ai-internet-search "what is a connection pool"
 ```
 
-[![npm](https://img.shields.io/npm/v/ai-internet-search?color=cb3837&label=npm)](https://www.npmjs.com/package/ai-internet-search)
-[![ci](https://img.shields.io/github/actions/workflow/status/rambaarde/ai-internet-search/ci.yml?label=ci)](https://github.com/rambaarde/ai-internet-search/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/actions/workflow/status/rambaarde/ai-internet-search/publish.yml?label=release)](https://github.com/rambaarde/ai-internet-search/actions/workflows/publish.yml)
-![deps](https://img.shields.io/badge/runtime%20deps-0-blue)
-![license](https://img.shields.io/badge/license-MIT-blue)
-![PRs](https://img.shields.io/badge/PRs-welcome-orange)
+The output is intentionally compact and machine-readable. A typical result
+contains a query kind, selected handler, research decision, certainty, quoted
+claims, source pointers, conflicts, and any gaps:
 
-```
-certainty: moderate — a primary source, but only one
+```text
+query_kind: engineering
+handler: engineering_sources
+decision: answer
+certainty: moderate
 
-claims[9]{tier,host,claim}:
-  1,github.com,Your little 4-Core i7 server with one hard disk should be running a connection pool of:
-  1,github.com,Reducing the connection pool size alone decreased response times from ~100ms to ~2ms.
-  3,pgdog.dev,One of its features is connection pooling  which allows many clients to share a database.
-  3,sudhir.io,A pool is an object that maintains a set of connections internally.
+claims[...]{tier,host,claim}:
+  ... quoted evidence ...
 
-visuals[1]{tier,host,why,url}:
-  1,github.com,filename says it carries data,https://github.com/.../Postgres_Chart.png
-
-sources[3]{tier,host,why,url}:
-  1,github.com,source code or changelog,https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing
-  3,pgdog.dev,unclassified,https://pgdog.dev/blog/why-yet-another-connection-pooler
-  3,sudhir.io,unclassified,https://sudhir.io/understanding-connections-pools/
-
-triaged: 10 found, 3 opened, 7 skipped before fetching (323kb read → 9 claims)
+sources[...]{tier,host,why,url}:
+  ... source pointers ...
 ```
 
-No API key. No account. Zero dependencies.
+Network results vary. Finding nothing is still a successful, explicit answer:
 
-## The problem
+```text
+could_not_establish: no source above the noise floor answered this.
+```
 
-Give an agent a question and it searches, gets ten results, and believes
-whichever answer appears most often.
+## Why it works this way
 
-That is not a hunch. It is measured:
-
-> **"Models tend to favor the majority viewpoint among retrieved contexts,
-> even when opposing evidence is more credible."**
-> — [Resolving Conflicting Evidence in Automated Fact-Checking](https://arxiv.org/pdf/2505.17762)
-
-> Research agents **"consistently favored SEO-optimized content farms over
-> authoritative sources."**
-> — [Anthropic, on building a multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system)
-
-Those two compound. Content farms exist to produce volume, so *the majority
-view is the farm's view*. Nine blog posts copied from one original outvote the
-official documentation, every time.
-
-Counting sources is not research. It is an echo with citations.
-
-## The research
-
-The design below came first, from watching agents fail on real questions —
-not from a paper. Afterward, each decision was checked against what's
-actually published about how AI agents fail at research. Plain language,
-and what each finding means for this tool:
-
-| finding | source | what it means here |
-|---|---|---|
-| Up to 1 in 5 "cited" claims from research agents don't match what the cited page says | [DeepResearch Bench](https://arxiv.org/abs/2506.11763) | Can't happen in this form. That gap opens when an agent *paraphrases* a source and cites it. This tool quotes every claim verbatim — no paraphrase step for a citation to drift away from. |
-| Even a "smart" ranking flips if a wrong claim is repeated on enough low-quality pages | [Whose Facts Win?](https://arxiv.org/abs/2601.03746) | Doesn't apply. Ranking happens *before* anything is fetched, and only one page per host is ever read — volume never reaches the step that decides what to trust. |
-| Which source gets read first can quietly bias the answer, separate from which one is right | position / "lost-in-the-middle" bias research | The most credible source is read first and listed first, always — nothing to be biased by. |
-| Letting a model say "I don't know" instead of guessing roughly halves its error rate | abstention research | `could_not_establish` makes exactly this trade below. |
-| URL-shape credibility ranking has one real gap | — | A page deliberately built to *look* like documentation (`docs.`, a plausible `.org`) could still slip into a higher tier than it deserves. Harder to fake than a purchasable "domain authority" score, but not impossible. Known, not fixed. |
-| Iteration and query-splitting only help on *multi-hop* questions | Anthropic, OpenAI, Gemini, Perplexity architecture writeups | Confirms the single-pass design below rather than exposing a gap — see [One question, one pass](#one-question-one-pass). |
-
-## The solution
-
-**Credibility is decided before anything is read**, from the URL alone —
-which is free, and happens before a single page is fetched:
+Search engines return a mixture of official documentation, research, copied
+articles, and content farms. Counting results lets repeated low-quality claims
+outvote a better source. This tool makes credibility part of the retrieval
+pipeline:
 
 ```mermaid
-flowchart TD
-    A(["A question, in plain words"]) --> B["Strip filler words,<br/>keep what's distinctive"]
-    B --> C["Pick providers by question type:<br/>definition, research, or engineering"]
-    C --> G["Candidates found"]
-    G --> H["<b>Rank by the URL alone,<br/>before reading anything</b>"]
-    H --> I["At most 1 page per site,<br/>at most 3 pages total"]
-    I --> J["Read only those.<br/>Quote the sentence, not a summary"]
-    J --> K{"Do two claims<br/>disagree?"}
-    K -->|"yes"| L["<b>Show both sides.<br/>Say which is more trustworthy.<br/>Never average them.</b>"]
-    K -->|"no"| M["Grade certainty from<br/>what was actually read"]
-    L --> M
-    M -->|"nothing above the noise floor"| N(["<b>Say so. Exit 0 anyway —<br/>finding nothing is an answer.</b>"])
-    M -->|"something was read"| O(["Claims + conflicts +<br/>certainty + sources"])
-
-    classDef ask fill:#0d9488,stroke:#0f766e,color:#fff
-    classDef care fill:#b45309,stroke:#92400e,color:#fff
-    classDef done fill:#1e3a8a,stroke:#1e40af,color:#fff
-    class A ask
-    class H care
-    class L care
-    class N,O done
+flowchart LR
+    A[Question] --> B[Route by intent]
+    B --> C[Find candidates]
+    C --> D[Rank by source quality]
+    D --> E[Open a small set]
+    E --> F[Quote evidence]
+    F --> G[Show conflicts and gaps]
 ```
 
-The shaded boxes are the three that matter: ranking before reading anything
-(the accuracy mechanism and the token saving, at once), a conflict shown
-rather than blended, and an empty result that says it is empty.
+The default pass opens at most one page per host and a small number of pages
+overall. It ranks candidates before fetching their bodies, so the same choice
+reduces noise, latency, and tokens. Authority is the primary sort key; title
+relevance and a URL-based freshness heuristic only break ties.
 
-### Typed workflow decisions
+The source tiers are deliberately explainable:
 
-The pipeline also emits a small, bounded decision object. It is deliberately
-deterministic in this open-source implementation, so it can be audited and
-tested without a model dependency:
+| Tier | Typical sources | Meaning |
+| --- | --- | --- |
+| 1 | Official docs, specifications, RFCs, source, changelogs, registries | The thing itself |
+| 2 | Papers, issue threads, vendor engineering blogs | People who built or study it |
+| 3 | Practitioner Q&A, reference sites, forums | Useful secondary evidence |
+| 4 | Content aggregators and SEO listicles | Lowest default trust |
+
+An unrecognised host starts at tier 3. Unknown is not automatically junk.
+
+## Typed decisions and uncertainty
+
+Every research plan exposes a bounded decision object. It is deterministic in
+the open-source implementation, so it can be audited and tested without a
+model dependency:
 
 ```text
 query_kind: definition | engineering | academic
 decision: answer | search_more | escalate_uncertainty | inspect_plan
-evidence_sufficient: 0..1
+evidence_sufficient: no | uncertain | yes
+probability: 0..1
 ```
 
-The same decision is available in CLI TOON output, `--json`, and the MCP
-`research` tool. A future local model can replace the heuristic evaluator
-behind `lib/decisions.js` without changing the output contract.
+The same decision is available in TOON output, `--json`, and the MCP
+`research` tool. The evaluator is isolated in `lib/decisions.js`, so a future
+local model can replace the heuristic without changing the output contract.
 
-The decision layer also keeps a review band around binary judgments. Its
-illustrative default is `< 0.30 → no`, `0.30–0.70 → uncertain`, and
-`> 0.70 → yes`; uncertain evidence should be escalated instead of forcing two
-near-identical probabilities into opposite actions. These are starting values,
-not calibration guarantees: tune them against labeled examples and the cost of
-wrong automation versus human review. This pattern is adapted from TypeSafe's
+The research plan includes four Jev-inspired controls:
+
+- intent routing selects a reference, engineering, or academic handler;
+- eligible providers can fan out in parallel;
+- source scoring combines authority, title relevance, and URL freshness;
+- an optional consistency hook can mark repeated borderline outputs unstable.
+
+The last item does not trigger repeated network searches by default. If the
+evidence is insufficient, the result tells the caller whether to answer,
+inspect the plan, search more, or escalate uncertainty. That keeps iteration
+under the control of the calling agent.
+
+The default uncertainty band for binary decisions is `< 0.30 → no`,
+`0.30–0.70 → uncertain`, and `> 0.70 → yes`. These are starting thresholds,
+not calibration guarantees; tune them against labeled examples and the cost of
+wrong automation versus human review. The pattern is adapted from TypeSafe's
 [self-consistency cookbook](https://docs.typesafe.ai/cookbooks/consistency_noul_cookbook).
-
-The research plan now also exposes four Jev-inspired controls:
-
-- intent routing chooses a reference, engineering, or academic handler;
-- provider fan-out runs eligible providers in parallel;
-- composite source scoring considers authority, title relevance, and URL freshness;
-- optional consistency checks can mark repeated borderline outputs unstable.
-
-Authority remains the primary sort key. The composite score only breaks ties
-and explains the selection; it never lets a low-authority page outrank a
-higher-authority source because it matches more keywords.
-
-| tier | source | why |
-|---|---|---|
-| 1 | official docs, specs, RFCs, source, changelogs, registries | the thing itself |
-| 2 | papers, issue threads, vendor engineering blogs | the people who built or study it |
-| 3 | practitioner Q&A, reference encyclopedias, forums | someone who read tier 1 |
-| 4 | content aggregators, SEO listicles | someone who read tier 3 |
-
-An unrecognised host is tier 3, not 4 — unproven is not the same as junk, and
-the alternative buries small authoritative sites under large mediocre ones.
-
-**This is why it is cheap.** Not reading seven of ten results is simultaneously
-the accuracy mechanism and the largest token saving. You are not trading
-correctness for cost — the same action buys both.
-
-**Conflicts are found and placed.** Models are documented to detect
-disagreement but fail to *localise* it, so the tool localises it: both claims,
-both tiers, and which source is more authoritative. Never averaged into one
-confident sentence that silently picks a side.
-
-**Certainty is graded, never voted on.** After
-[GRADE](https://www.cdc.gov/acip-grade-handbook/hcp/chapter-6-systemic-review-overview/index.html):
-
-| grade | when |
-|---|---|
-| `high` | a primary source, independently corroborated |
-| `moderate` | a primary source, but only one |
-| `low` | no primary source read, or sources disagree |
-| `very low` | aggregator-tier only |
-| `none` | nothing could be read |
-
-A live disagreement always downgrades. An answer with a known contradiction in
-it is not high certainty whatever its sources.
-
-**Gaps are stated.** Terms nothing addressed, and sources that could not be
-read with the reason — `http 403`, `timed out`, `too large`. "I could not open
-this" and "I read it and it said nothing" are different answers.
-
-## Benchmarks
-
-Measured, not estimated — every number below is reproducible with the
-command beside it.
-
-**Tokens** — what the calling agent pays, per question
-
-| | chars | ~tokens | command |
-|---|---|---|---|
-| a full answer — claims, visuals, sources | 2,600 | **~650** | `ai-internet-search "<question>" \| wc -c` |
-| `--plan`, nothing fetched | 876 | **~220** | `ai-internet-search --plan "<question>" \| wc -c` |
-| an empty result | 441 | **~110** | `ai-internet-search "<gibberish>" \| wc -c` |
-
-Divide chars by ~4 for a token estimate, the same rule of thumb used
-throughout — no tokenizer dependency to keep the package at zero.
-
-For comparison, [Anthropic measured](https://www.anthropic.com/engineering/multi-agent-research-system)
-agents at ~4× a chat turn and multi-agent research at ~15×. This is a single
-pass that opens at most three pages.
-
-**Speed**
-
-| | |
-|---|---|
-| A full question, network included | **~1.5 s** |
-| `--plan`, triage only | **~0.75 s** |
-| An empty result | **~0.6 s** |
-
-```sh
-time ai-internet-search "what is a connection pool" >/dev/null
-```
-
-**Footprint**
-
-| | |
-|---|---|
-| Runtime dependencies | **0** |
-| Package | **27 kB** (74 kB unpacked, 10 files) |
-| Tests | **79**, no framework, network tests skip cleanly offline |
-
-```sh
-npm pack --dry-run && npm test
-```
-
-**What it actually read**, on the example above: 323 kB of pages fetched,
-9 claims emitted, 7 of 10 candidates skipped before a single byte of them was
-fetched. Skipping is the accuracy mechanism, not a shortcut on top of it —
-see [The solution](#the-solution).
-
-## Empty results are answers
-
-```
-sources[0]{tier,host,title}:
-
-could_not_establish: no source above the noise floor answered this.
-  4 candidate(s) were found and none were relevant enough to open.
-```
-
-Silence is indistinguishable from a crash, and a confident guess is worse than
-either. Finding nothing exits `0` — it is an answer, not a failure.
-
-## It finds the figures, it does not describe them
-
-An agent reads plain text. A benchmark chart, an architecture diagram, or a
-latency graph is exactly where the load-bearing evidence usually lives, and it
-is invisible to text extraction.
-
-So charts and diagrams are located and returned as pointers, with the sentence
-that introduced them:
-
-```
-visuals[2]{tier,host,why,url}:
-  1,github.com,chart or benchmark,https://github.com/.../pool-size-vs-latency.png
-  2,arxiv.org,figure,https://arxiv.org/.../fig3-throughput.png
-```
-
-Chrome — avatars, icons, logos, spacers, tracking pixels — is filtered out.
-
-**It does not claim to have read them.** The tool has no vision model; it says
-where a figure is and what the page said about it, and a multimodal agent can
-fetch it. Alt text was tried first and abandoned after measurement: Wikipedia's
-"descriptive" alt attributes turned out to be *"The Free Encyclopedia"* and
-*"Wikimedia Foundation"*. Alt text describes the site, not the science.
 
 ## One question, one pass
 
-No query decomposition, no re-searching on a found gap, no reflection loop.
-This is deliberate, not unfinished: every published deep-research
-architecture — [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system),
-OpenAI, Gemini, Perplexity — reserves iteration for **multi-hop** questions,
-ones whose answer isn't in any single source. Perplexity, the most
-iteration-heavy of them, still routes a simple factual query through one
-retrieval pass, same as this tool does for every question. Nothing published
-measures a decomposition gain on a single-fact question.
+The tool performs one retrieval pass per invocation. It does not silently enter
+a reflection loop or keep re-searching after a gap. This is intentional:
 
-A multi-hop question is better split by the caller, which already has an LLM,
-into several calls to this tool — decomposition done by the party that
-already reasons, without an LLM or a dependency inside the pipeline.
+- simple factual questions usually need one focused retrieval pass;
+- multi-hop questions are better split by the caller into several calls;
+- an insufficient result is explicit (`search_more` or
+  `escalate_uncertainty`) instead of being turned into a confident guess.
+
+Provider discovery may run in parallel, but page reading remains bounded and
+the output keeps the source tier, quoted evidence, and known gaps visible.
 
 ## Usage
 
 ```sh
-ai-internet-search "<question>"              research a question
-ai-internet-search --plan "<question>"       triage only, fetch nothing
-ai-internet-search --limit 5 "<question>"    open more sources
-ai-internet-search --json "<question>"       JSON instead of TOON
-ai-internet-search --report "<question>"     also write a standalone HTML report
-ai-internet-search --report=out.html "<question>"  write it to a specific path
+ai-internet-search "<question>"                    # research
+ai-internet-search --plan "<question>"             # triage; fetch nothing
+ai-internet-search --limit 5 "<question>"          # open more sources
+ai-internet-search --per-host 2 "<question>"       # allow more per host
+ai-internet-search --json "<question>"             # JSON output
+ai-internet-search --report "<question>"           # write an HTML report
+ai-internet-search --report=out.html "<question>"  # choose report path
+ai-internet-search --render "<question>"           # retry readable pages in Chromium
 ```
+
+Exit codes are stable for callers:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success, including an explicit empty result |
+| `1` | Runtime or research error |
+| `2` | Unknown flag or bad usage |
 
 ### Query directives
 
-Google-style directives inside the question scope the candidates a provider
-returned, without polluting the keyword search that finds them:
+Google-style directives scope candidates returned by a provider without
+polluting the keyword search:
 
 ```sh
 ai-internet-search "postgres pooling site:github.com"
 ai-internet-search 'rate limiting -site:reddit.com intitle:"token bucket"'
 ```
 
-Supported: `site:` / `-site:`, `inurl:` / `-inurl:`, `intitle:` / `-intitle:`
-(quote a phrase to keep its spaces), and `filetype:`. A `site:` value may carry
-a path (`site:github.com/torvalds`) and matches subdomains of its host.
+Supported directives are `site:` / `-site:`, `inurl:` / `-inurl:`,
+`intitle:` / `-intitle:` and `filetype:`. A `site:` value may include a path.
+`after:` and `before:` are intentionally not supported because candidates do
+not reliably carry publication dates.
 
-They filter the URL and title a provider already returned, so a directive costs
-no extra request. And they are **lenient**: a directive that would leave *no*
-candidate is relaxed rather than enforced, and the output names it
-(`relaxed filetype:pdf (no candidate matched)`) — returning nothing because a
-scope was too tight is the exact failure this tool exists to avoid.
+Directives are lenient: if a filter would remove every candidate, it is
+relaxed and the output explains why. A restrictive query should not turn into
+silence just because a provider omitted a field.
 
-`after:` / `before:` are deliberately absent: a candidate carries no publish
-date, so a date filter could only be parsed and then relaxed. Recency is a real
-gap, but it belongs with the source-reading path, not here.
+### Rendering pages that fetch cannot read
 
-### Reading pages fetch cannot: `--render`
-
-A client-rendered SPA sends its mount point and no text, so a bare fetch gets an
-empty shell and the source is dropped as `client-rendered`. With `--render`,
-such a source (and a `403`, often anti-bot) is retried in a **headless browser**
-that runs the page's JavaScript, and the rendered DOM goes through the same
-scoring as any other page.
+Some pages return an empty client-rendered shell or a `403` to a plain fetch.
+With `--render`, the tool retries the source in an already-installed,
+headless Chrome or Chromium and sends the rendered DOM through the same scoring
+and extraction path:
 
 ```sh
-ai-internet-search "..."             # a source comes back: could_not_establish: client-rendered
-ai-internet-search --render "..."    # retry that one in a browser; a rescued source is marked (rendered)
+ai-internet-search --render "..."
 ```
 
-It shells out to an **already-installed** Chrome/Chromium (`--headless
---dump-dom`) — no npm dependency, and a **no-op when no browser is present**
-(it says so rather than failing silently). Rendering is **opt-in**: the default
-path stays the fast, fetch-only one. It fixes *reading* a page, not *finding*
-one — for the discovery gap, plug in a search source (below).
+Rendering is opt-in, adds no npm dependency, and is a no-op with an explicit
+message when no compatible browser is available. It helps read a page; it does
+not improve provider discovery.
 
-### Reading through your own browser: `--browser`
+### Reading through your own browser
 
-`--browser URL` does the same retry as `--render`, but in **your running
-Chrome**, over the Chrome DevTools Protocol. The page opens in a background
-tab with that browser's cookies and logins, and the tab closes after the read.
-A page that refuses a headless bot can open for you.
+`--browser URL` retries a source in a running Chrome over the Chrome DevTools
+Protocol, using that profile's cookies and logins:
 
 ```sh
-# Chrome refuses remote debugging on your default profile, so use a separate one.
-# Log in to the sites you need in that window once; the profile keeps the sessions.
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9222 --user-data-dir="$HOME/.ai-internet-search-chrome"
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.ai-internet-search-chrome"
 
 ai-internet-search --browser http://127.0.0.1:9222 "..."
 ```
 
-- It uses Node's built-in WebSocket, so it needs **Node 22+** and adds no npm
-  dependency. On an older Node, or when nothing answers at the URL, the output
-  says so and the source stays dropped.
-- Only `http:`, `https:` and `data:` URLs are opened. A search result can never
-  make it open `file:` or `chrome:` pages in your browser.
-- Anything on a page that your login lets you see can go into the claims.
-  Give the research profile only the logins you want the tool to use.
-- The DevTools port lets any local process control that browser. Close that
-  Chrome when you are done.
+This path needs Node.js 22 or newer because it uses Node's built-in WebSocket
+client. Only `http:`, `https:`, and `data:` URLs are opened. A DevTools port
+allows local processes to control that browser, so close the profile when you
+are done.
 
-### General-web recall: a search API key
+## General-web recall
 
-The key-free providers (Wikipedia, OpenAlex, DOAJ, HackerNews, GitHub issues,
-Stack Overflow) answer **reference, academic, practitioner and bug-diagnosis**
-questions. They have no coverage of general-web *"how do I…"* topics, so
-those return `providers: none`. That is the recall gap the tool has always
-named.
+The default providers are keyless and focused: Wikipedia, OpenAlex, DOAJ,
+Hacker News, GitHub issues, and Stack Overflow. They cover reference,
+academic, practitioner, and bug-diagnosis questions, but not all general-web
+"how do I..." searches.
 
-Enable one general-web provider and its results feed the **same source-tier
-ranking** as everything else (the provider gives recall, the tier grading gives
-credibility; the count-based "consensus" ranking is never used). All are
-**no-op until enabled**, so none is ever required.
-
-**Free forever, no card:**
+Enable a general-web provider when you need broader recall:
 
 ```sh
-export MARGINALIA=1        # keyless, zero setup, independent index (indie/blog-leaning)
-export GOOGLE_SEARCH_API_KEY=…  GOOGLE_SEARCH_CX=…   # real Google, 100 queries/day free
+export MARGINALIA=1
+# Or configure one keyed provider:
+export GOOGLE_SEARCH_API_KEY=...
+export GOOGLE_SEARCH_CX=...
 ai-internet-search "how do I keep a status page realtime"
 ```
 
-- **`MARGINALIA=1`** — keyless, no account, unlimited. Its index is small and
-  indie-web, so it covers tech/blog topics well and mainstream/ops topics
-  thinly. Being keyless it is **opt-in**, so it never taxes the default path.
-- **Google Programmable Search** — real Google results, **100/day free forever,
-  no card** (needs a one-time key + a "search the whole web" engine id `cx`).
+Other supported keyed providers are `BRAVE_API_KEY`, `TAVILY_API_KEY`, and
+`SERPER_API_KEY`. The first available keyed provider is used in the order
+Brave, Tavily, Serper, then Google. Provider results enter the same tiered
+ranking; provider count is never treated as consensus.
 
-**Paid tiers, higher volume:** `BRAVE_API_KEY`, `TAVILY_API_KEY`, or
-`SERPER_API_KEY`. The first keyed provider present wins, in the order
-Brave → Tavily → Serper → Google.
+## MCP and agent clients
 
-Why a key/instance and not a plain scraper: keyless SERP scraping does not work
-from a program. `html.duckduckgo.com` answers a server-side request with a `202`
-challenge and Mojeek with a CAPTCHA. The engines that answer a program are the
-ones with an API (or, like Marginalia, a public API key that ships in the
-request).
-
-| exit | meaning |
-|---|---|
-| `0` | success, including "found nothing" |
-| `1` | error |
-| `2` | unknown flag or bad usage |
-
-## Works in the terminal and in GUI clients
-
-`npm install -g ai-internet-search` puts both binaries on `PATH` once, for
-every client below.
-
-### Terminal agents — Claude Code, Codex CLI, Antigravity (`agy`), Gemini CLI
-
-They already have a shell. **Nothing to register** — the agent just runs
-`ai-internet-search "<question>"` the moment it's installed, the same as any
-other CLI. Registering it as an MCP tool instead adds a layer that can only
-go out of date, and AXI measures MCP at 185k tokens per task against 79k for
-a CLI.
-
-If a client is set up to prefer tool calls over shell commands, it can still
-be registered:
-
-| client | how |
-|---|---|
-| Claude Code | `claude mcp add --scope user ai-internet-search -- ai-internet-search-mcp` |
-| Codex CLI (`~/.codex/config.toml`) | `[mcp_servers.ai-internet-search]`<br/>`command = "ai-internet-search-mcp"` |
-| Antigravity (`agy`) | `agy mcp add ai-internet-search ai-internet-search-mcp` |
-| Gemini CLI (`~/.gemini/settings.json`) | `{ "mcpServers": { "ai-internet-search": { "command": "ai-internet-search-mcp" } } }` |
-
-### GUI clients — no shell to call
-
-Claude Desktop and Cursor have no terminal, so they need the MCP server:
-
-| client | config file | block |
-|---|---|---|
-| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` | `{ "mcpServers": { "ai-internet-search": { "command": "ai-internet-search-mcp" } } }` |
-| Cursor | `~/.cursor/mcp.json` (or `.cursor/mcp.json` per-project) | same block |
-
-Two tools, `research` and `plan_research`. The MCP `instructions` field carries
-the rules with the result, because a result whose conflicts get averaged back
-into one confident paragraph has lost everything the tool was for.
-
-### Browser-resident and remote clients — connect by URL, not a command
-
-```sh
-ai-internet-search-mcp --http 8787   # streamable-http, 127.0.0.1 only
-```
-
-Same handler, same tools, **the same bytes on the wire**: the handshake plus
-both tool schemas measures 415 tokens over either transport. A transport choice
-costs nothing in tokens, it only changes who can reach the server. It binds to
-loopback and nothing else.
-
-## Built for agents to call
-
-Follows [AXI](https://axi.md/) conventions for agent-ergonomic CLIs:
-
-- **TOON output** rather than JSON — same information, fewer tokens
-- **Definitive empty states** — never silence
-- **Structured errors on stdout**, exit `0`/`1`/`2`
-- **No interactive prompts** — every parameter is a flag
-- **`help[]` next-step hints** appended to output
-- **Content-first** — running it bare says what it is, not a help dump
-
-## Sources
-
-Key-less by default: Hacker News, Wikipedia, OpenAlex, DOAJ, GitHub issues,
-Stack Overflow. No signup between an agent and its first useful answer.
-`GITHUB_TOKEN`, when set, raises GitHub's search limit from 10 to 30 requests/min.
-
-The trade is **recall** — key-less providers miss things a paid index would
-find, and the tool tells you when that happens rather than inventing an answer.
-The provider layer is swappable; a search API buys better coverage, not a
-different pipeline.
-
-## Install
+Install once to put both binaries on `PATH`:
 
 ```sh
 npm install -g ai-internet-search
-# or
-npx ai-internet-search "<question>"
 ```
 
-Node 18+. Nothing else.
+The package provides `ai-internet-search` and `ai-internet-search-mcp`.
 
-## Tests
+Terminal agents can run the CLI directly. If a client prefers MCP, register
+the stdio server:
 
 ```sh
-npm test
+claude mcp add --scope user ai-internet-search -- ai-internet-search-mcp
 ```
 
-No framework, no mocks for the unit tests, and the network tests skip cleanly
-when offline so a red CI means a real failure.
+The server exposes `research` and `plan_research`. For browser-resident or
+remote clients, use streamable HTTP on loopback:
+
+```sh
+ai-internet-search-mcp --http 8787
+```
+
+The HTTP transport binds to `127.0.0.1` by default. Its tools use the same
+research handler and output contract as the CLI.
+
+## Agent-friendly output
+
+The CLI follows [AXI](https://axi.md/) conventions:
+
+- compact TOON output by default, with `--json` when strict JSON is needed;
+- explicit empty states instead of silence;
+- structured errors and stable exit codes;
+- no interactive prompts;
+- `help[]` hints for the next useful action.
+
+## Limitations
+
+- It is a retrieval and evidence tool, not a generative chat model.
+- Keyless providers have less general-web recall than paid search APIs.
+- URL freshness is a heuristic; publication dates are not universally
+  available at candidate-triage time.
+- It locates figures and diagrams but does not interpret their pixels.
+- Multi-hop decomposition and follow-up searches remain the caller's choice.
+- Network availability and source anti-bot behavior can change the result.
+
+## Development
+
+```sh
+git clone https://github.com/rambaarde/ai-internet-search.git
+cd ai-internet-search
+npm test
+npm pack --dry-run
+```
+
+The project has no runtime dependencies. Unit tests use Node's built-in test
+runner; network-dependent checks skip cleanly when offline.
 
 ## License
 
