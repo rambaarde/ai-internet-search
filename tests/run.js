@@ -9,7 +9,7 @@ const { join } = require('node:path');
 const { mkdtempSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { gradeSource, scoreSource, triage } = require('../lib/sources');
-const { keywords, looksRelevant, kindsFor, languagesFor, fold } = require('../lib/search');
+const { keywords, looksRelevant, kindsFor, languagesFor, fold, directUrl, directCandidate } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { choice, score, noul, uncertaintyBand, decideQuery, decideResearch, consistencyCheck } = require('../lib/decisions');
 
@@ -122,6 +122,13 @@ is(keywords('how big should my postgres connection pool be'), 'postgres connecti
 is(keywords('what is a connection pool'), 'connection pool', 'question framing is stripped');
 hasnt(keywords('should I use the thing'), 'should', 'stopwords are removed');
 ok(keywords('the a is').length > 0 ? 'a question of only stopwords still yields a query' : 'x');
+
+const direct = 'https://github.com/browser-use/jev-ultrafast';
+is(directUrl(`research this: ${direct}`), direct, 'an explicit web URL is detected');
+is(directCandidate(direct).direct, 'true', 'a direct URL becomes an auditable candidate');
+const directPlan = run(['--plan', '--json', direct], 0);
+has(directPlan.out, '"providers": [\n    "direct"', 'a direct URL bypasses provider discovery');
+has(directPlan.out, direct, 'a direct URL is preserved in the research plan');
 
 is(looksRelevant('About Database Connection Pool Sizing', ['connection', 'pool']), 'true', 'a matching title is relevant');
 is(looksRelevant('Show HN: I made an MCP server', ['connection', 'pool']), 'false', 'an unrelated title is rejected');
