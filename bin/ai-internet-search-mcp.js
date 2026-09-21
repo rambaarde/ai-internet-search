@@ -131,8 +131,8 @@ async function research(question, { limit = 3, plan = false } = {}) {
     out.push('');
   }
 
-  out.push(`sources[${opened.length}]{tier,host,url}:`);
-  for (const s of opened) out.push(`  ${s.tier},${s.host},${s.url}`);
+  out.push(`sources[${opened.length}]{tier,host,url,sha256}:`);
+  for (const s of opened) out.push(`  ${s.tier},${s.host},${s.url},${s.contentHash ? s.contentHash.slice(0, 16) : ''}`);
   return out.join('\n');
 }
 

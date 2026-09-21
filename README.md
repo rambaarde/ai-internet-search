@@ -40,7 +40,7 @@ certainty: moderate
 claims[...]{tier,host,claim}:
   ... quoted evidence ...
 
-sources[...]{tier,host,why,url}:
+sources[...]{tier,host,why,url,sha256}:
   ... source pointers ...
 ```
 
@@ -99,6 +99,11 @@ probability: 0..1
 The same decision is available in TOON output, `--json`, and the MCP
 `research` tool. The evaluator is isolated in `lib/decisions.js`, so a future
 local model can replace the heuristic without changing the output contract.
+
+Readable sources also carry a `contentHash`: the full JSON output exposes the
+SHA-256 fingerprint of the exact bytes fetched, while compact output shows its
+first 16 characters as `sha256`. This is an audit signal for comparing runs,
+not a permanent guarantee that a URL has not changed.
 
 The research plan includes four Jev-inspired controls:
 
