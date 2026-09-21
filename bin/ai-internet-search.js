@@ -18,7 +18,7 @@
  * 0 success / 1 error / 2 bad usage.
  */
 
-const { findCandidates, keywords, kindsFor, directCandidate } = require('../lib/search');
+const { findCandidates, keywords, kindsFor, directCandidate, directOnly } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { findBrowser, cdpProblem } = require('../lib/render');
 const { pick: pickWebSearch } = require('../lib/providers/websearch');
@@ -138,6 +138,7 @@ async function main() {
   const query = keywords(cleaned);
   const terms = query.split(' ').filter(Boolean);
   const direct = directCandidate(opts.question);
+  const sourceOnly = directOnly(opts.question);
   const kinds = direct ? ['engineering'] : kindsFor(opts.question);
   const queryDecision = decideQuery(opts.question, kinds);
   const found = await findCandidates(cleaned, { kinds: queryDecision.providerKinds });
@@ -150,11 +151,11 @@ async function main() {
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
   const opened = opts.plan ? chosen.map((c) => ({ ...c, read: false, reason: 'not fetched (--plan)', claims: [] }))
-                           : await readSources(chosen, terms, { render: opts.render, browser: opts.browser });
+                           : await readSources(chosen, terms, { render: opts.render, browser: opts.browser, directOnly: sourceOnly });
   const conflicts = opts.plan ? [] : findConflicts(opened);
   const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
-  const researchDecision = decideResearch({ plan: opts.plan, opened, conflicts, certainty, missing });
+  const researchDecision = decideResearch({ plan: opts.plan, opened, conflicts, certainty, missing, directOnly: sourceOnly });
 
   // A file, never stdout. An agent piping markup back into its own context
   // would pay exactly the cost this tool exists to avoid, so it gets a path.
