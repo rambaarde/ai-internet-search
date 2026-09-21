@@ -117,6 +117,10 @@ evidence is insufficient, the result tells the caller whether to answer,
 inspect the plan, search more, or escalate uncertainty. That keeps iteration
 under the control of the calling agent.
 
+An `answer` decision also requires authoritative support: at least one tier-1
+source, or independent corroboration from two tier-2 sources. A moderate grade
+from one secondary source is therefore still escalated for review.
+
 The default uncertainty band for binary decisions is `< 0.30 → no`,
 `0.30–0.70 → uncertain`, and `> 0.70 → yes`. These are starting thresholds,
 not calibration guarantees; tune them against labeled examples and the cost of
@@ -135,6 +139,8 @@ a reflection loop or keep re-searching after a gap. This is intentional:
 
 Provider discovery may run in parallel, but page reading remains bounded and
 the output keeps the source tier, quoted evidence, and known gaps visible.
+Readable documents are capped at 8 MB so large references remain usable
+without turning one request into an unbounded memory load.
 
 ## Usage
 
@@ -188,6 +194,9 @@ ai-internet-search "https://github.com/browser-use/jev-ultrafast"
 
 This is useful for repository READMEs, papers, documentation pages, and other
 specific sources that a keyless search provider may not discover.
+When the prompt contains only generic inspection wording plus a URL, the tool
+returns the strongest extracted claims but keeps the decision in review until
+the caller supplies a specific question.
 
 ### Rendering pages that fetch cannot read
 
