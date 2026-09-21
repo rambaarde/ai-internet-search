@@ -15,7 +15,7 @@
 
 const readline = require('node:readline');
 const http = require('node:http');
-const { findCandidates, keywords, kindsFor } = require('../lib/search');
+const { findCandidates, keywords, kindsFor, directCandidate } = require('../lib/search');
 const { triage } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
@@ -51,7 +51,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        question: { type: 'string', description: 'The question, in plain words.' },
+        question: { type: 'string', description: 'The question in plain words, or an explicit http(s) URL to research directly.' },
         limit: { type: 'number', description: 'Maximum sources to open. Default 3.' },
       },
       required: ['question'],
@@ -74,7 +74,9 @@ const TOOLS = [
 async function research(question, { limit = 3, plan = false } = {}) {
   const query = keywords(question);
   const terms = query.split(' ').filter(Boolean);
-  const queryDecision = decideQuery(question, kindsFor(question));
+  const direct = directCandidate(question);
+  const kinds = direct ? ['engineering'] : kindsFor(question);
+  const queryDecision = decideQuery(question, kinds);
   const found = await findCandidates(question, { kinds: queryDecision.providerKinds });
   const chosen = triage(found.candidates, { limit, perHost: 1, terms });
 
