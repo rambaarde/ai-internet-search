@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.5.1...ai-internet-search-v0.6.0) (2026-09-21)
+
+
+### Features
+
+* **search:** fingerprint fetched source content ([e4c5724](https://github.com/rambaarde/ai-internet-search/commit/e4c5724726d0051afd66eca9fe41bdc99c90b884))
+* **search:** fingerprint fetched source content ([1b775c4](https://github.com/rambaarde/ai-internet-search/commit/1b775c4947c6ca9635023e13a063c73b057b205d))
+
 ## [0.5.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.5.0...ai-internet-search-v0.5.1) (2026-09-21)
 
 
