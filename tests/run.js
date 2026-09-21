@@ -9,7 +9,7 @@ const { join } = require('node:path');
 const { mkdtempSync, rmSync, existsSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { gradeSource, scoreSource, triage } = require('../lib/sources');
-const { keywords, looksRelevant, kindsFor, languagesFor, fold, directUrl, directCandidate } = require('../lib/search');
+const { keywords, looksRelevant, kindsFor, languagesFor, fold, directUrl, directCandidate, directOnly } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { choice, score, noul, uncertaintyBand, decideQuery, decideResearch, consistencyCheck } = require('../lib/decisions');
 
@@ -44,8 +44,23 @@ const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpec
      'search_more', 'empty evidence asks the workflow to search more');
   is(decideResearch({ opened: [{}], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).nextAction.value,
      'escalate_uncertainty', 'conflicting evidence escalates uncertainty');
-  is(decideResearch({ opened: [{}], conflicts: [], certainty: { level: 'high' }, missing: { missingTerms: [] } }).nextAction.value,
+  is(decideResearch({ opened: [{ read: true, tier: 1, host: 'docs.example', claims: [{ text: 'x' }] }], conflicts: [], certainty: { level: 'high' }, missing: { missingTerms: [] } }).nextAction.value,
      'answer', 'strong complete evidence permits an answer');
+  is(decideResearch({
+    opened: [{ read: true, tier: 2, host: 'vendor.example', claims: [{ text: 'x' }] },
+      { read: true, tier: 3, host: 'forum.example', claims: [{ text: 'y' }] }],
+    conflicts: [], certainty: { level: 'moderate' }, missing: { missingTerms: [] },
+  }).nextAction.value, 'escalate_uncertainty', 'secondary evidence without independent authority stays in review');
+  is(decideResearch({
+    opened: [{ read: true, tier: 2, host: 'a.example', claims: [{ text: 'x' }] },
+      { read: true, tier: 2, host: 'b.example', claims: [{ text: 'y' }] }],
+    conflicts: [], certainty: { level: 'moderate' }, missing: { missingTerms: [] },
+  }).nextAction.value, 'answer', 'independent tier-2 corroboration can answer');
+  is(decideResearch({
+    directOnly: true,
+    opened: [{ read: true, tier: 1, host: 'docs.example', claims: [{ text: 'x' }] }],
+    conflicts: [], certainty: { level: 'moderate' }, missing: { missingTerms: [] },
+  }).nextAction.value, 'escalate_uncertainty', 'a source-only URL stays in review without a question');
   is(decideResearch({ opened: [{}], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).evidenceSufficient.value,
      'uncertain', 'conflicting evidence enters the review band');
 }
@@ -126,6 +141,8 @@ ok(keywords('the a is').length > 0 ? 'a question of only stopwords still yields 
 const direct = 'https://github.com/browser-use/jev-ultrafast';
 is(directUrl(`research this: ${direct}`), direct, 'an explicit web URL is detected');
 is(directCandidate(direct).direct, 'true', 'a direct URL becomes an auditable candidate');
+is(directOnly('research this: ' + direct), true, 'generic URL inspection wording is detected');
+is(directOnly('what is this project: ' + direct), false, 'a URL with a specific question is not source-only');
 const directPlan = run(['--plan', '--json', direct], 0);
 has(directPlan.out, '"providers": [\n    "direct"', 'a direct URL bypasses provider discovery');
 has(directPlan.out, direct, 'a direct URL is preserved in the research plan');
@@ -338,6 +355,11 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
     'Supavisor is a scalable cloud-native Postgres connection pooler that handles many clients.');
   is(kept.length, 1, 'a page title is not kept as a claim');
   has(kept[0], 'Supavisor is a scalable', 'the actual sentence survives');
+  is(sentences('Target Keyword: transformer architecture evolution\n' +
+    'Added in: v24.7.0 History Version Changes\n' +
+    'Get early access to the future of AI agents.\n' +
+    'Attention mechanisms let models focus on relevant tokens.'
+  ).length, 1, 'metadata and version fragments are not claims');
 
   const terms = ['connection', 'pool'];
   const withNumber = scoreSentence('Set the connection pool to 10 for this workload.', terms);

@@ -15,7 +15,7 @@
 
 const readline = require('node:readline');
 const http = require('node:http');
-const { findCandidates, keywords, kindsFor, directCandidate } = require('../lib/search');
+const { findCandidates, keywords, kindsFor, directCandidate, directOnly } = require('../lib/search');
 const { triage } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
@@ -75,6 +75,7 @@ async function research(question, { limit = 3, plan = false } = {}) {
   const query = keywords(question);
   const terms = query.split(' ').filter(Boolean);
   const direct = directCandidate(question);
+  const sourceOnly = directOnly(question);
   const kinds = direct ? ['engineering'] : kindsFor(question);
   const queryDecision = decideQuery(question, kinds);
   const found = await findCandidates(question, { kinds: queryDecision.providerKinds });
@@ -101,11 +102,11 @@ async function research(question, { limit = 3, plan = false } = {}) {
     );
   }
 
-  const opened = await readSources(chosen, terms);
+  const opened = await readSources(chosen, terms, { directOnly: sourceOnly });
   const conflicts = findConflicts(opened);
   const certainty = grade(opened, conflicts);
   const missing = gaps(opened, terms);
-  const decision = decideResearch({ opened, conflicts, certainty, missing });
+  const decision = decideResearch({ opened, conflicts, certainty, missing, directOnly: sourceOnly });
 
   const out = [`query_kind: ${queryDecision.queryKind.value}`, `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`, `decision: ${decision.nextAction.value} — ${decision.nextAction.why}`, `certainty: ${certainty.level} — ${certainty.why}`, ''];
   const rows = [];
