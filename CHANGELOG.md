@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.5.0...ai-internet-search-v0.5.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **search:** research explicit URLs directly ([6dff4af](https://github.com/rambaarde/ai-internet-search/commit/6dff4af1004c774310f2ffc9f97b4b781f12b3bc))
+
 ## [0.5.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.4.0...ai-internet-search-v0.5.0) (2026-09-20)
 
 
