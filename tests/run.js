@@ -325,11 +325,13 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
 
 // --- extraction -------------------------------------------------------------
 {
-  const { htmlToText, sentences, scoreSentence, extractClaims } = require('../lib/extract');
+  const { htmlToText, sentences, scoreSentence, contentHash, extractClaims } = require('../lib/extract');
   // Script bodies must go before tags, or a 1MB SPA becomes "850k chars of text".
   hasnt(htmlToText('<script>var x = "hello world padding padding";</script><p>real text</p>'), 'hello world',
         'script bodies are removed, not just their tags');
   is(htmlToText('<p>it&#x27;s &amp; it&#39;s</p>'), "it's & it's", 'numeric and named entities are decoded');
+  is(contentHash('same evidence'), contentHash('same evidence'), 'evidence fingerprints are stable');
+  ok(contentHash('same evidence') !== contentHash('changed evidence'), 'evidence fingerprints change with content');
 
   // A page title is not a claim: it asserts nothing actionable.
   const kept = sentences('GitHub - supabase/supavisor: A cloud-native pooler thing here\n' +

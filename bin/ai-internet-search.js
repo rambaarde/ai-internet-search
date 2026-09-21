@@ -288,8 +288,8 @@ async function main() {
     lines.push('');
   }
 
-  lines.push(`sources[${opened.length}]{tier,host,why,url}:`);
-  for (const c of opened) lines.push(`  ${c.tier},${c.host},${c.why}${c.rendered ? ' (rendered)' : ''},${c.url}`);
+  lines.push(`sources[${opened.length}]{tier,host,why,url,sha256}:`);
+  for (const c of opened) lines.push(`  ${c.tier},${c.host},${c.why}${c.rendered ? ' (rendered)' : ''},${c.url},${c.contentHash ? c.contentHash.slice(0, 16) : ''}`);
   lines.push('');
   const kb = Math.round(opened.reduce((n, s) => n + (s.bytes || 0), 0) / 1024);
   lines.push(`triaged: ${effective.length} found, ${opened.length} opened, ${effective.length - opened.length} skipped before fetching${kb ? ` (${kb}kb read → ${claimRows.length} claims)` : ''}`);
