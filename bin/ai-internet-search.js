@@ -18,7 +18,7 @@
  * 0 success / 1 error / 2 bad usage.
  */
 
-const { findCandidates, keywords, kindsFor } = require('../lib/search');
+const { findCandidates, keywords, kindsFor, directCandidate } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { findBrowser, cdpProblem } = require('../lib/render');
 const { pick: pickWebSearch } = require('../lib/providers/websearch');
@@ -55,6 +55,10 @@ directives (Google-style, scope the candidates a provider returned):
   site:host   -site:host   filetype:ext   intitle:"phrase"   inurl:str
   e.g.  ai-internet-search "postgres pooling site:github.com"
   A directive that would leave no candidate is relaxed, not enforced, and said so.
+
+direct URLs:
+  ai-internet-search "https://github.com/browser-use/jev-ultrafast"
+  An explicit http(s) URL is fetched directly and still gets source tiering.
 
 flags:
   --plan          triage only; never opens a source
@@ -133,7 +137,9 @@ async function main() {
   const { query: cleaned, constraints, any: hasDirectives } = parseDirectives(opts.question);
   const query = keywords(cleaned);
   const terms = query.split(' ').filter(Boolean);
-  const queryDecision = decideQuery(opts.question, kindsFor(opts.question));
+  const direct = directCandidate(opts.question);
+  const kinds = direct ? ['engineering'] : kindsFor(opts.question);
+  const queryDecision = decideQuery(opts.question, kinds);
   const found = await findCandidates(cleaned, { kinds: queryDecision.providerKinds });
   const scoped = hasDirectives
     ? applyDirectives(found.candidates, constraints)

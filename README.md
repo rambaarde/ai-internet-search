@@ -171,6 +171,19 @@ Directives are lenient: if a filter would remove every candidate, it is
 relaxed and the output explains why. A restrictive query should not turn into
 silence just because a provider omitted a field.
 
+### Direct URL research
+
+An explicit `http(s)` URL is treated as the source to inspect. It bypasses
+provider discovery, but still goes through source tiering, bounded extraction,
+render fallback, claims, and uncertainty grading:
+
+```sh
+ai-internet-search "https://github.com/browser-use/jev-ultrafast"
+```
+
+This is useful for repository READMEs, papers, documentation pages, and other
+specific sources that a keyless search provider may not discover.
+
 ### Rendering pages that fetch cannot read
 
 Some pages return an empty client-rendered shell or a `403` to a plain fetch.
