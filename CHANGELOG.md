@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.0...ai-internet-search-v0.6.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **search:** tighten evidence reliability gates ([22eb40e](https://github.com/rambaarde/ai-internet-search/commit/22eb40e1f1aed2a88de64d4a2376f07725f8b132))
+* **search:** tighten evidence reliability gates ([4ad40c7](https://github.com/rambaarde/ai-internet-search/commit/4ad40c7ffa1b87278da5eb0bbf974700c464f84c))
+
 ## [0.6.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.5.1...ai-internet-search-v0.6.0) (2026-09-21)
 
 
