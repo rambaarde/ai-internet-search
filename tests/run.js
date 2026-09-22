@@ -65,6 +65,28 @@ const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpec
      'uncertain', 'conflicting evidence enters the review band');
 }
 
+// --- optional Jev evaluator: config + answer parsing (sync, no network) -----
+// The tool must be byte-identical with no key, and every failure path must land
+// on the deterministic heuristic. These pin the gating and the tolerant parser.
+{
+  const jev = require('../lib/jev');
+  is(jev.config({}, {}).enabled, false, 'jev is off with no key — the key-free default is unchanged');
+  is(jev.config({}, { TYPESAFE_API_KEY: 'k' }).enabled, true, 'a TYPESAFE_API_KEY turns jev on, like any provider key');
+  is(jev.config({ jev: false }, { TYPESAFE_API_KEY: 'k' }).enabled, false, '--no-jev forces the heuristic even with a key');
+  is(jev.config({ plan: true }, { TYPESAFE_API_KEY: 'k' }).enabled, false, 'jev never runs under --plan; the plan stays free');
+  is(jev.config({ jev: true }, {}).requested, true, '--jev with no key records the request so the CLI can say so');
+  is(jev.config({ jev: true }, {}).enabled, false, '--jev cannot enable jev without a key');
+  is(jev.config({}, { TYPESAFE_API_KEY: 'k', JEV_MIN_CONFIDENCE: '0.9' }).minConfidence, 0.9, 'the confidence floor is tunable from the environment');
+
+  is(jev.readAnswer({ choice: 'engineering', probabilities: { engineering: 0.8 }, confidence: 0.8 }).value, 'engineering', 'a choice answer parses to its named value');
+  is(jev.readAnswer({ probability: 0.9, confidence: 0.7 }).value, 0.9, 'a noul answer parses to its probability');
+  is(jev.readAnswer({ level: 'high', confidence: 0.6 }).value, 'high', 'a score answer parses to its level');
+  is(jev.readAnswer({}), null, 'an answer missing its essentials is null, so the heuristic takes over');
+  is(jev.readAnswer(null), null, 'a null answer is null, never a throw');
+  is(jev.trust({ minConfidence: 0.55 }, { confidence: 0.8 }), true, 'a high-margin answer is trusted');
+  is(jev.trust({ minConfidence: 0.55 }, { confidence: 0.3 }), false, 'a low-margin answer is not trusted, so the heuristic stands');
+}
+
 // --- composite source scoring ----------------------------------------------
 {
   const official = scoreSource({ url: 'https://docs.example.dev/docs/connection-pool', title: 'Connection pool configuration' }, ['connection', 'pool']);
@@ -622,6 +644,72 @@ function finish() {
 
 // --- network-dependent ------------------------------------------------------
 (async () => {
+  // --- optional Jev evaluator: refiners over a mocked fetch (no network) -----
+  // Placed in this awaited IIFE so it completes before the tally. Every call
+  // injects fetchImpl, so nothing here touches TypeSafe's API: the point is to
+  // prove the seam and its fallbacks, not to hit a paid endpoint in CI.
+  {
+    const jev = require('../lib/jev');
+    const { findConflicts } = require('../lib/assess');
+    const on = jev.config({}, { TYPESAFE_API_KEY: 'test' });
+    const off = jev.config({}, {});
+    const fake = (answers) => ({ fetchImpl: async () => ({ ok: true, json: async () => ({ answers }) }) });
+    const broken = { fetchImpl: async () => ({ ok: false }) };
+    const throws = { fetchImpl: async () => { throw new Error('network'); } };
+
+    // ask itself: disabled, non-200, or thrown all return null — degrade, never fail.
+    is(await jev.ask('s', { q: { type: 'noul' } }, off), null, 'jev.ask is null when disabled — no network, no cost');
+    is(await jev.ask('s', { q: { type: 'noul' } }, on, broken), null, 'a non-200 from jev is null, so the heuristic stands');
+    is(await jev.ask('s', { q: { type: 'noul' } }, on, throws), null, 'a thrown fetch is null, never a crash');
+
+    // Query kind: off keeps the heuristic; a confident answer overrides it; a
+    // low-margin one does not.
+    const det = decideQuery('what is a mutex', ['definition']);
+    is((await jev.refineQuery('q', det, off)).queryKind.value, 'definition', 'refineQuery keeps the heuristic when jev is off');
+    const jq = await jev.refineQuery('q', det, on, fake({ query_kind: { choice: 'academic', confidence: 0.9 } }));
+    is(jq.queryKind.value, 'academic', 'a confident jev answer overrides the query kind');
+    is(jq.queryKind.method, 'jev', 'a jev-decided query kind is stamped so the reader knows who chose it');
+    is(jq.providerKinds[0], 'academic', 'the provider fan-out follows the jev-chosen kind, unchanged in shape');
+    is((await jev.refineQuery('q', det, on, fake({ query_kind: { choice: 'academic', confidence: 0.2 } }))).queryKind.value,
+       'definition', 'a low-margin jev answer falls back to the heuristic');
+
+    // Relevance: a map for confident answers, null when off, consumed by triage
+    // to break ties within a tier — never touching the tier order.
+    const cands = [{ url: 'https://x.io/a', title: 'A' }, { url: 'https://y.io/b', title: 'B' }];
+    is(await jev.relevance('q', cands, off), null, 'relevance is null when jev is off, leaving the title match in place');
+    const rel = await jev.relevance('q', cands, on, fake({ rel_0: { probability: 0.9, confidence: 0.8 }, rel_1: { probability: 0.1, confidence: 0.9 } }));
+    is(rel.get('https://x.io/a'), 0.9, 'relevance maps each candidate url to jev\'s score');
+    is(scoreSource({ url: 'https://x.io/a', title: 'n' }, ['foo'], { relevance: rel }).breakdown.relevanceBy, 'jev',
+       'a scored candidate records that jev judged its relevance, not the title');
+    is(triage(cands, { limit: 2, perHost: 1, terms: ['foo'], relevance: rel })[0].url, 'https://x.io/a',
+       'triage ranks the more relevant same-tier source first, tier order intact');
+
+    // Conflicts: additive, labelled, only what the heuristic missed.
+    const srcs = [
+      { tier: 1, host: 'a.org', url: 'u1', read: true, claims: [{ text: 'The connection pool is safe to share across threads.' }] },
+      { tier: 4, host: 'b.com', url: 'u2', read: true, claims: [{ text: 'The connection pool must never be shared between threads.' }] },
+    ];
+    const base = findConflicts(srcs);
+    is(base.length, 0, 'the string heuristic does not see this semantic disagreement');
+    const augmented = await jev.augmentConflicts(srcs, base, on, fake({ cf_0: { probability: 0.8, confidence: 0.9 } }));
+    is(augmented.length, 1, 'jev flags the semantic disagreement the heuristic missed');
+    is(augmented[0].method, 'jev', 'a model-flagged conflict is labelled, never mixed in as an auditable one');
+    is(await jev.augmentConflicts(srcs, base, off) === base, true, 'augmentConflicts is a no-op when jev is off');
+
+    // Certainty and next action: overridden together only when confident.
+    const detC = { level: 'low', why: 'x' };
+    const detD = decideResearch({ opened: [{}], conflicts: [], certainty: detC, missing: {} });
+    const refined = await jev.refineAssessment(
+      { opened: [{ read: true, tier: 1, host: 'a', claims: [{ text: 'x' }] }], conflicts: [], missing: {} },
+      { certainty: detC, decision: detD }, on,
+      fake({ certainty: { choice: 'high', confidence: 0.9 }, next_action: { choice: 'answer', confidence: 0.9 } }));
+    is(refined.certainty.level, 'high', 'a confident jev grade overrides the deterministic certainty');
+    is(refined.certainty.method, 'jev', 'a jev grade is stamped so the reader can weigh it');
+    is(refined.decision.nextAction.value, 'answer', 'jev can choose the next workflow action when confident');
+    is((await jev.refineAssessment({ opened: [], conflicts: [], missing: {} }, { certainty: detC, decision: detD }, off)).certainty.level,
+       'low', 'refineAssessment keeps the heuristic when jev is off');
+  }
+
   // Optional browser render (--render). Lives in this IIFE because it is the one
   // that awaits everything and then tallies; a slow browser spawn in another
   // block would finish after process.exit and go uncounted. No network -- the

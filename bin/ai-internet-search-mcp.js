@@ -20,6 +20,7 @@ const { triage } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
 const { decideQuery, decideResearch } = require('../lib/decisions');
+const jev = require('../lib/jev');
 
 const VERSION = require('../package.json').version;
 
@@ -77,9 +78,13 @@ async function research(question, { limit = 3, plan = false } = {}) {
   const direct = directCandidate(question);
   const sourceOnly = directOnly(question);
   const kinds = direct ? ['engineering'] : kindsFor(question);
-  const queryDecision = decideQuery(question, kinds);
+  // Optional Jev evaluator, driven by TYPESAFE_API_KEY. Disabled under plan, so
+  // plan_research stays the free deterministic preview it advertises.
+  const jevCfg = jev.config({ plan });
+  const queryDecision = await jev.refineQuery(question, decideQuery(question, kinds), jevCfg);
   const found = await findCandidates(question, { kinds: queryDecision.providerKinds });
-  const chosen = triage(found.candidates, { limit, perHost: 1, terms });
+  const relevanceMap = await jev.relevance(query, found.candidates, jevCfg);
+  const chosen = triage(found.candidates, { limit, perHost: 1, terms, relevance: relevanceMap });
 
   if (!chosen.length) {
     const decision = decideResearch({ opened: [], conflicts: [], certainty: { level: 'none' }, missing: {} });
@@ -103,12 +108,14 @@ async function research(question, { limit = 3, plan = false } = {}) {
   }
 
   const opened = await readSources(chosen, terms, { directOnly: sourceOnly });
-  const conflicts = findConflicts(opened);
-  const certainty = grade(opened, conflicts);
+  const conflicts = await jev.augmentConflicts(opened, findConflicts(opened), jevCfg);
+  let certainty = grade(opened, conflicts);
   const missing = gaps(opened, terms);
-  const decision = decideResearch({ opened, conflicts, certainty, missing, directOnly: sourceOnly });
+  let decision = decideResearch({ opened, conflicts, certainty, missing, directOnly: sourceOnly });
+  ({ certainty, decision } = await jev.refineAssessment({ opened, conflicts, missing }, { certainty, decision }, jevCfg));
 
-  const out = [`query_kind: ${queryDecision.queryKind.value}`, `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`, `decision: ${decision.nextAction.value} — ${decision.nextAction.why}`, `certainty: ${certainty.level} — ${certainty.why}`, ''];
+  const evaluatorLine = jevCfg.enabled ? `evaluator: jev ${jevCfg.model}` : '';
+  const out = [`query_kind: ${queryDecision.queryKind.value}`, `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`, ...(evaluatorLine ? [evaluatorLine] : []), `decision: ${decision.nextAction.value} — ${decision.nextAction.why}`, `certainty: ${certainty.level} — ${certainty.why}`, ''];
   const rows = [];
   for (const s of opened) for (const c of s.claims) rows.push(`  ${s.tier},${s.host},${c.text.replace(/[\n,]/g, ' ')}`);
   out.push(`claims[${rows.length}]{tier,host,claim}:`, ...rows, '');
@@ -116,7 +123,7 @@ async function research(question, { limit = 3, plan = false } = {}) {
   if (conflicts.length) {
     out.push(`conflicts[${conflicts.length}]:`);
     for (const c of conflicts) {
-      out.push(`  ${c.kind}`);
+      out.push(`  ${c.kind}${c.method === 'jev' ? ` (jev, confidence ${c.confidence})` : ''}`);
       out.push(`    tier ${c.a.tier}  ${c.a.host}: ${c.a.text}`);
       out.push(`    tier ${c.b.tier}  ${c.b.host}: ${c.b.text}`);
       out.push(`    prefer: ${c.prefer ? `${c.prefer.host} (tier ${c.prefer.tier})` : 'neither — same tier'}`);
