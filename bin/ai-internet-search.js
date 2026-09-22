@@ -26,7 +26,6 @@ const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
 const { decideQuery, decideResearch } = require('../lib/decisions');
-const jev = require('../lib/jev');
 const { renderReport } = require('../lib/report');
 const { writeFileSync, statSync } = require('node:fs');
 const { join } = require('node:path');
@@ -70,34 +69,23 @@ flags:
                   --user-data-dir=DIR; URL e.g. http://127.0.0.1:9222; Node 22+)
   --limit N       maximum sources to open (default 3)
   --per-host N    maximum sources per host (default 1)
-  --jev           use the Jev (System One) evaluator for the fuzzy decisions
-                  (query kind, relevance, conflicts, certainty). On by default
-                  whenever TYPESAFE_API_KEY is set; this flag only says so aloud
-  --no-jev        force the deterministic heuristics even if a key is set
   --json          emit JSON instead of TOON
   --report        also write a standalone HTML report and print its path
   --report=PATH   write the report to PATH instead of the default name
   --help          this text
   --version       print version
 
-Jev is optional and paid ($0.042 / Mtok in, output free). Tiering always stays
-deterministic. Any missing key, error, timeout, or low-confidence answer falls
-back to the heuristic, so the tool never depends on it. Tune JEV_MIN_CONFIDENCE
-(default 0.55) from your own labelled data.
-
 exit codes:
   0 success   1 error   2 bad usage`;
 
 function parseArgs(argv) {
-  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null, render: false, browser: '', jev: undefined };
+  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null, render: false, browser: '' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') return { help: true };
     if (a === '--version' || a === '-V') return { version: true };
     else if (a === '--plan') opts.plan = true;
-    else if (a === '--jev') opts.jev = true;
-    else if (a === '--no-jev') opts.jev = false;
     else if (a === '--render') opts.render = true;
     else if (a === '--browser') {
       // A missing URL must not quietly fall back to the headless browser.
@@ -152,36 +140,22 @@ async function main() {
   const direct = directCandidate(opts.question);
   const sourceOnly = directOnly(opts.question);
   const kinds = direct ? ['engineering'] : kindsFor(opts.question);
-  // The optional Jev evaluator. config() reads TYPESAFE_API_KEY and the flags;
-  // it is disabled under --plan, so the plan stays a free deterministic preview.
-  const jevCfg = jev.config(opts);
-  const queryDecision = await jev.refineQuery(opts.question, decideQuery(opts.question, kinds), jevCfg);
+  const queryDecision = decideQuery(opts.question, kinds);
   const found = await findCandidates(cleaned, { kinds: queryDecision.providerKinds });
   const scoped = hasDirectives
     ? applyDirectives(found.candidates, constraints)
     : { candidates: found.candidates, applied: [], relaxed: [] };
   const effective = scoped.candidates;
-  // Relevance judged before fetching, so a better "do not open this" saves the
-  // most tokens. null (Jev off, or unsure) leaves triage's title match in place.
-  const relevanceMap = await jev.relevance(query, effective, jevCfg);
-  const chosen = triage(effective, { limit: opts.limit, perHost: opts.perHost, terms, relevance: relevanceMap });
+  const chosen = triage(effective, { limit: opts.limit, perHost: opts.perHost, terms });
 
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
   const opened = opts.plan ? chosen.map((c) => ({ ...c, read: false, reason: 'not fetched (--plan)', claims: [] }))
                            : await readSources(chosen, terms, { render: opts.render, browser: opts.browser, directOnly: sourceOnly });
-  // Jev is an ADDITIVE conflict detector: it flags semantic disagreements the
-  // string heuristic cannot see, and never overrides one it did.
-  const conflicts = opts.plan ? [] : await jev.augmentConflicts(opened, findConflicts(opened), jevCfg);
-  let certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
+  const conflicts = opts.plan ? [] : findConflicts(opened);
+  const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
-  let researchDecision = decideResearch({ plan: opts.plan, opened, conflicts, certainty, missing, directOnly: sourceOnly });
-  // Certainty and next action, refined together on a confident, high-margin
-  // answer; the deterministic grade stands otherwise.
-  if (!opts.plan) {
-    ({ certainty, decision: researchDecision } =
-      await jev.refineAssessment({ opened, conflicts, missing }, { certainty, decision: researchDecision }, jevCfg));
-  }
+  const researchDecision = decideResearch({ plan: opts.plan, opened, conflicts, certainty, missing, directOnly: sourceOnly });
 
   // A file, never stdout. An agent piping markup back into its own context
   // would pay exactly the cost this tool exists to avoid, so it gets a path.
@@ -196,7 +170,6 @@ async function main() {
         opts.limit !== 3 ? `--limit ${opts.limit}` : '',
         opts.perHost !== 1 ? `--per-host ${opts.perHost}` : '',
         opts.browser ? `--browser ${opts.browser}` : opts.render ? '--render' : '',
-        opts.jev === true ? '--jev' : opts.jev === false ? '--no-jev' : '',
         '--report',
       ].filter(Boolean).join(' ');
       // What was NOT opened, and why it was ranked below what was. A reader
@@ -228,7 +201,6 @@ async function main() {
     return out(JSON.stringify({ question: opts.question, query, kinds: kindsFor(opts.question),
       providers: found.providers, failed: found.failed, candidates: effective.length,
       directives: hasDirectives ? { applied: scoped.applied, relaxed: scoped.relaxed, found: found.candidates.length } : null,
-      evaluator: { enabled: jevCfg.enabled, model: jevCfg.enabled ? jevCfg.model : null, minConfidence: jevCfg.minConfidence, relevanceScored: relevanceMap ? relevanceMap.size : 0 },
       certainty, decisions: { query: queryDecision, research: researchDecision }, conflicts, gaps: missing, sources: opened }, null, 2), 0);
   }
 
@@ -237,20 +209,6 @@ async function main() {
   lines.push(`query: ${query}`);
   lines.push(`handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`);
   lines.push(`providers: ${found.providers.join(',') || 'none'}${found.failed.length ? `  unreachable: ${found.failed.join(',')}` : ''}`);
-  // Say who made the fuzzy calls. The tool always reports how it knew; when Jev
-  // decided some and the heuristic others, the reader is told which is which.
-  if (jevCfg.enabled) {
-    const byJev = [];
-    const byHeuristic = [];
-    (queryDecision.queryKind.method === 'jev' ? byJev : byHeuristic).push('query');
-    (relevanceMap ? byJev : byHeuristic).push('relevance');
-    (certainty.method === 'jev' ? byJev : byHeuristic).push('certainty');
-    (researchDecision.nextAction.method === 'jev' ? byJev : byHeuristic).push('next-action');
-    lines.push(`evaluator: jev ${jevCfg.model} — decided ${byJev.join(',') || 'none'}`
-      + `${byHeuristic.length ? ` · heuristic fallback: ${byHeuristic.join(',')}` : ''}`);
-  } else if (jevCfg.requested && !jevCfg.key) {
-    lines.push('evaluator: jev requested, but TYPESAFE_API_KEY is not set — export it, or drop --jev');
-  }
   if (directiveLine) lines.push(directiveLine);
   // Say it plainly when --render was asked for but cannot happen: a silent
   // no-op would look like rendering was tried and failed.
@@ -298,7 +256,7 @@ async function main() {
   if (conflicts.length) {
     lines.push(`conflicts[${conflicts.length}]:`);
     for (const c of conflicts) {
-      lines.push(`  ${c.kind}${c.method === 'jev' ? ` (jev, confidence ${c.confidence})` : ''}`);
+      lines.push(`  ${c.kind}`);
       lines.push(`    tier ${c.a.tier}  ${c.a.host}: ${c.a.text}`);
       lines.push(`    tier ${c.b.tier}  ${c.b.host}: ${c.b.text}`);
       lines.push(`    prefer: ${c.prefer ? `${c.prefer.host} (tier ${c.prefer.tier}, more authoritative)` : 'neither — same tier, both stand'}`);
