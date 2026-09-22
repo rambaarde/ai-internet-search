@@ -97,9 +97,8 @@ probability: 0..1
 ```
 
 The same decision is available in TOON output, `--json`, and the MCP
-`research` tool. The evaluator is isolated in `lib/decisions.js`, so a model
-can replace the heuristic without changing the output contract — which is
-exactly what the [optional Jev evaluator](#optional-the-jev-evaluator) does.
+`research` tool. The evaluator is isolated in `lib/decisions.js`, so a future
+local model can replace the heuristic without changing the output contract.
 
 Readable sources also carry a `contentHash`: the full JSON output exposes the
 SHA-256 fingerprint of the exact bytes fetched, while compact output shows its
@@ -128,59 +127,6 @@ not calibration guarantees; tune them against labeled examples and the cost of
 wrong automation versus human review. The pattern is adapted from TypeSafe's
 [self-consistency cookbook](https://docs.typesafe.ai/cookbooks/consistency_noul_cookbook).
 
-## Optional: the Jev evaluator
-
-The `choice` / `score` / `noul` primitives above are the three question types
-[TypeSafe's Jev](https://typesafe.ai/) — a "System One" model that returns typed,
-probabilistic decisions instead of text — answers directly. Setting a
-`TYPESAFE_API_KEY` lets Jev, rather than the regex heuristic, make the four
-fuzzy judgements, the same way a search key turns on a general-web provider:
-
-| Decision | Heuristic default | With Jev |
-| --- | --- | --- |
-| Query kind → provider routing | English-only keyword weights | reads meaning, so a non-English question routes correctly |
-| Candidate relevance (what not to open) | title word overlap | judges the title/host against the question before fetching |
-| Conflict detection | figures and polarity words | **adds** semantic disagreements the string rules miss |
-| Certainty and next action | evidence-state rules | grades from the same evidence summary |
-
-Two things Jev never does: it never ranks a source's credibility — **tiering
-stays deterministic and auditable, which is the whole point of the tool** — and
-it never fetches a page. Its conflict hits are *added* to the heuristic's and
-labelled `model-flagged`, never blended into the auditable ones.
-
-It follows the same contract as every other optional feature here: **degrade,
-never fail.** A missing key, a non-200, a timeout, a malformed reply, or an
-answer below the confidence floor all fall back to the heuristic, so the tool
-still installs and runs offline of any account. TypeSafe is explicit that Jev's
-confidence "is a margin, not a probability that the answer is right", so only
-answers above `JEV_MIN_CONFIDENCE` (default `0.55`) are used — tune it against
-your own labelled workload.
-
-```sh
-export TYPESAFE_API_KEY=...                 # turns Jev on
-ai-internet-search "¿qué es un mutex?"      # non-English routing, decided by Jev
-ai-internet-search --no-jev "..."           # force the heuristic even with a key
-ai-internet-search --jev "..."              # opt in aloud; warns if no key is set
-```
-
-Every run says who decided. When Jev is on, the output carries an
-`evaluator: jev <model> — decided ...` line, each decision object is stamped
-`method: "jev"` or `"deterministic"`, and `--json` adds an `evaluator` block.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TYPESAFE_API_KEY` | — | Enables Jev; without it the tool is unchanged |
-| `JEV_MIN_CONFIDENCE` | `0.55` | Margin below which the heuristic is used |
-| `JEV_MODEL` | `jev-latest` | Pin a model version once thresholds are tuned |
-| `TYPESAFE_API_URL` | `https://api.typesafe.ai/v1/systemone` | Endpoint or gateway override |
-| `JEV_TIMEOUT_MS` | `4000` | Per-call timeout before falling back |
-| `JEV_RETAIN` | on | Set `0` to drop the zero-data-retention request header |
-
-Jev is paid ($0.042 / Mtok in, output free) and is **disabled under `--plan`**,
-so a plan stays a free, deterministic preview. Cost is bounded per run: the four
-decisions batch their questions, relevance covers up to 30 candidates in one
-call, and conflict detection checks at most eight pairs.
-
 ## One question, one pass
 
 The tool performs one retrieval pass per invocation. It does not silently enter
@@ -207,8 +153,6 @@ ai-internet-search --json "<question>"             # JSON output
 ai-internet-search --report "<question>"           # write an HTML report
 ai-internet-search --report=out.html "<question>"  # choose report path
 ai-internet-search --render "<question>"           # retry readable pages in Chromium
-ai-internet-search --jev "<question>"              # use Jev for the fuzzy decisions
-ai-internet-search --no-jev "<question>"           # force the deterministic heuristic
 ```
 
 Exit codes are stable for callers:
@@ -355,9 +299,6 @@ The CLI follows [AXI](https://axi.md/) conventions:
 - It locates figures and diagrams but does not interpret their pixels.
 - Multi-hop decomposition and follow-up searches remain the caller's choice.
 - Network availability and source anti-bot behavior can change the result.
-- The [Jev evaluator](#optional-the-jev-evaluator) is optional and never ranks
-  source credibility; its accuracy and calibration are vendor-reported, so it is
-  gated by confidence and always falls back to the auditable heuristic.
 
 ## Development
 
