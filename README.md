@@ -83,6 +83,10 @@ The source tiers are deliberately explainable:
 
 An unrecognised host starts at tier 3. Unknown is not automatically junk.
 
+A vendor engineering blog moves to tier 1 ("vendor on its own product") when
+the question names that vendor, or when you give its URL directly. Anthropic's
+post about Anthropic's own system is the first-hand account of that system.
+
 ## Typed decisions and uncertainty
 
 Every research plan exposes a bounded decision object. It is deterministic in
@@ -137,6 +141,17 @@ a reflection loop or keep re-searching after a gap. This is intentional:
 - an insufficient result is explicit (`search_more` or
   `escalate_uncertainty`) instead of being turned into a confident guess.
 
+Within that pass, one retry is allowed, and it is always reported. Hacker News,
+Stack Exchange and GitHub return only results that match every term, so a long
+question gets nothing back from them. A provider that returns nothing for the
+full query is asked once more with the first three terms. The output then shows
+a `widened:` line. Widened results must still match the full question.
+Providers that did return results are not asked again.
+
+For the caller's next pass, each gap comes with a short follow-up query in
+`next_queries` (at most three). The query is the question's leading covered
+terms plus the missing term. The agent runs the loop. The tool does not.
+
 Provider discovery may run in parallel, but page reading remains bounded and
 the output keeps the source tier, quoted evidence, and known gaps visible.
 Readable documents are capped at 8 MB so large references remain usable
@@ -148,6 +163,7 @@ without turning one request into an unbounded memory load.
 ai-internet-search "<question>"                    # research
 ai-internet-search --plan "<question>"             # triage; fetch nothing
 ai-internet-search --limit 5 "<question>"          # open more sources
+ai-internet-search --claims 6 "<question>"         # quote more per source (default 3)
 ai-internet-search --per-host 2 "<question>"       # allow more per host
 ai-internet-search --json "<question>"             # JSON output
 ai-internet-search --report "<question>"           # write an HTML report
