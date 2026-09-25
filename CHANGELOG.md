@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.1...ai-internet-search-v0.7.0) (2026-09-25)
+
+
+### Features
+
+* widen empty queries, add --claims and next_queries, tier vendor self-reports ([d951008](https://github.com/rambaarde/ai-internet-search/commit/d951008220b68c587c2a26d688382b0f030b3f5e))
+
+
 ## [0.6.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.0...ai-internet-search-v0.6.1) (2026-09-21)
 
 
