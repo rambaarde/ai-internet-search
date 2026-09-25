@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.1...ai-internet-search-v0.7.0) (2026-09-25)
+
+
+### Features
+
+* add optional Jev (System One) evaluator behind the decision seam ([9f53608](https://github.com/rambaarde/ai-internet-search/commit/9f5360806d939571626643e483b97d0d454b44a5))
+* widen empty queries, add --claims and next_queries, tier vendor self-reports ([82f3f8a](https://github.com/rambaarde/ai-internet-search/commit/82f3f8a1264c40fd3f062d47b30279395bcf649a))
+* widen empty queries, add --claims and next_queries, tier vendor self-reports ([eb2370b](https://github.com/rambaarde/ai-internet-search/commit/eb2370bfe2970ce5914c5f1c910f66d3b2263cb9))
+* widen empty queries, add --claims and next_queries, tier vendor self-reports ([d951008](https://github.com/rambaarde/ai-internet-search/commit/d951008220b68c587c2a26d688382b0f030b3f5e))
+
+
+### Reverts
+
+* remove optional Jev external-API evaluator ([#44](https://github.com/rambaarde/ai-internet-search/issues/44)) ([be73375](https://github.com/rambaarde/ai-internet-search/commit/be73375d4f360573444e41fd6c33ad961d65a205))
+
 ## [0.6.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.0...ai-internet-search-v0.6.1) (2026-09-21)
 
 
