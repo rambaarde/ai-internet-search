@@ -53,6 +53,10 @@ const TOOLS = [
       properties: {
         question: { type: 'string', description: 'The question in plain words, or an explicit http(s) URL to research directly.' },
         limit: { type: 'number', description: 'Maximum sources to open. Default 3.' },
+        claims: {
+          type: 'number',
+          description: 'Maximum claims to quote from each source. Default 3. Use a larger number for more depth. Use a smaller number to use fewer tokens.',
+        },
       },
       required: ['question'],
     },
@@ -70,8 +74,13 @@ const TOOLS = [
   },
 ];
 
-/** Run the pipeline and render it as text, since MCP content is text. */
-async function research(question, { limit = 3, plan = false } = {}) {
+/**
+ * Run the pipeline and render it as text, since MCP content is text.
+ * @param {string} question
+ * @param {{limit?: number, plan?: boolean, claims?: number}} [opts]
+ * @returns {Promise<string>}
+ */
+async function research(question, { limit = 3, plan = false, claims = 3 } = {}) {
   const query = keywords(question);
   const terms = query.split(' ').filter(Boolean);
   const direct = directCandidate(question);
@@ -102,13 +111,15 @@ async function research(question, { limit = 3, plan = false } = {}) {
     );
   }
 
-  const opened = await readSources(chosen, terms, { directOnly: sourceOnly });
+  const opened = await readSources(chosen, terms, { directOnly: sourceOnly, claims });
   const conflicts = findConflicts(opened);
   const certainty = grade(opened, conflicts);
   const missing = gaps(opened, terms);
   const decision = decideResearch({ opened, conflicts, certainty, missing, directOnly: sourceOnly });
 
-  const out = [`query_kind: ${queryDecision.queryKind.value}`, `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`, `decision: ${decision.nextAction.value} — ${decision.nextAction.why}`, `certainty: ${certainty.level} — ${certainty.why}`, ''];
+  const out = [`query_kind: ${queryDecision.queryKind.value}`, `handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`];
+  if (found.widened) out.push(`widened: "${found.widened.query}" for ${found.widened.providers.join(',')} (the full query matched nothing there)`);
+  out.push(`decision: ${decision.nextAction.value} — ${decision.nextAction.why}`, `certainty: ${certainty.level} — ${certainty.why}`, '');
   const rows = [];
   for (const s of opened) for (const c of s.claims) rows.push(`  ${s.tier},${s.host},${c.text.replace(/[\n,]/g, ' ')}`);
   out.push(`claims[${rows.length}]{tier,host,claim}:`, ...rows, '');
@@ -131,6 +142,9 @@ async function research(question, { limit = 3, plan = false } = {}) {
     if (missing.missingTerms.length) out.push(`  nothing read addressed: ${missing.missingTerms.join(', ')}`);
     out.push('');
   }
+
+  const nextQueries = [...new Set(missing.next)].slice(0, 3);
+  if (nextQueries.length) out.push(`next_queries[${nextQueries.length}]:`, ...nextQueries.map((q) => `  ${q}`), '');
 
   out.push(`sources[${opened.length}]{tier,host,url,sha256}:`);
   for (const s of opened) out.push(`  ${s.tier},${s.host},${s.url},${s.contentHash ? s.contentHash.slice(0, 16) : ''}`);
@@ -166,7 +180,10 @@ async function handle(req) {
     const args = params?.arguments || {};
     try {
       if (name === 'research') {
-        const text = await research(String(args.question || ''), { limit: Number(args.limit) || 3 });
+        // Whole number of 1 or more; anything else is the default, never NaN,
+        // because extraction stops at `claims` and NaN would never stop.
+        const claims = Number.isInteger(args.claims) && args.claims >= 1 ? args.claims : 3;
+        const text = await research(String(args.question || ''), { limit: Number(args.limit) || 3, claims });
         return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError: false } });
       }
       if (name === 'plan_research') {

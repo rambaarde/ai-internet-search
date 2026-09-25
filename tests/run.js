@@ -114,6 +114,18 @@ is(gradeSource('https://top10devblogs.com/best-10-tips').tier, 4, 'an SEO listic
 // An unknown host is unproven, not junk. Treating it as tier 4 would bury
 // small authoritative sites under large mediocre ones.
 is(gradeSource('https://sudhir.io/some-post').tier, 3, 'an unrecognised host is unproven, not junk');
+// A vendor on its own product is the first-hand account; on anything else it
+// stays secondary. Brand is matched against the question's terms only.
+is(gradeSource('https://www.anthropic.com/engineering/x', { terms: ['anthropic', 'agents'] }).tier, 1,
+   'a vendor blog is primary when the question names that vendor');
+is(gradeSource('https://www.anthropic.com/engineering/x', { terms: ['openai', 'agents'] }).tier, 2,
+   'a vendor blog stays secondary when the question names another vendor');
+is(gradeSource('https://research.google.com/blog/x', { terms: ['google'] }).tier, 1,
+   'the brand is the label before the TLD, not the subdomain');
+is(gradeSource('https://www.anthropic.com/engineering/x', { direct: true }).tier, 1,
+   'a vendor page given directly is primary about itself');
+is(gradeSource('https://medium.com/@anthropic/x', { terms: ['medium'] }).tier, 4,
+   'naming an aggregator does not promote it');
 
 // --- triage -----------------------------------------------------------------
 {
@@ -329,6 +341,13 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   has(r.out, 'help[', 'an error still offers a next step');
 }
 {
+  // --claims bounds extraction; NaN would never stop it, so it must be refused.
+  for (const v of ['0', 'x', '2.5']) {
+    const r = run(['--claims', v, 'x'], 2);
+    is(r.code, 2, `--claims ${v} exits 2`);
+  }
+}
+{
   // AXI content-first: no arguments shows what this is and what to run.
   const r = run([], 0);
   has(r.out, 'ai-internet-search', 'no arguments identifies the tool');
@@ -423,6 +442,17 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
      'aggregator-only evidence is very low');
   is(grade([{ tier: 1, host: 'a', read: false, claims: [] }], []).level, 'none',
      'nothing readable is graded none, not assumed');
+
+  // A gap must name a SHORT next query: the covered subject plus the gap term.
+  // Appending the term to the whole query recreates the long query that
+  // match-every-term engines answered with nothing.
+  const { gaps } = require('../lib/assess');
+  const g = gaps([{ read: true, claims: [{ text: 'A deep research agent spends tokens.' }] }],
+    ['deep', 'research', 'agent', 'planner', 'cost']);
+  is(g.missingTerms.join(' '), 'planner cost', 'terms no claim covered are the gaps');
+  is(g.next.join('|'), 'deep research planner|deep research cost', 'each gap gets a short next query led by covered terms');
+  is(gaps([{ read: true, direct: true, claims: [] }], ['owner', 'repo']).next.length, 0,
+     'a direct URL has no gaps, so no next queries');
 }
 
 // --- MCP server -------------------------------------------------------------
@@ -459,7 +489,7 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
     question: 'q', query: 'postgres pool', command: 'ai-internet-search --limit 5 --report "q"',
     certainty: { level: 'low', why: 'one primary source; downgraded by a disagreement' },
     providers: ['hackernews'],
-    gaps: { missingTerms: ['pgbouncer'], unread: [] },
+    gaps: { missingTerms: ['pgbouncer'], next: ['postgres pool pgbouncer'], unread: [] },
     conflicts: [{ kind: 'figures differ',
       a: { tier: 1, host: 'postgresql.org', url: 'http://a', text: 'around 10 connections' },
       b: { tier: 4, host: 'top10devblogs.com', url: 'http://b', text: 'always 100 connections' },
@@ -577,6 +607,52 @@ function finish() {
   const page = (html) => 'data:text/html,' + encodeURIComponent(html);
   const src = (html) => ({ url: page(html), title: 't', tier: 1, host: 'example.test', why: 'w' });
   const T = ['connection', 'pool'];
+
+  // Page chrome that matched every term and outranked the findings, each seen
+  // in a real run: the title as a heading or "Title:" line (arXiv 2307.03172),
+  // the title wrapped in "View a PDF of the paper titled ...", an unpunctuated
+  // heading, a signpost, and a code line that was then reported as a conflict.
+  const titled = await extractClaims(src('<html><head><title>[2307.03172] Connection Pool Sizing: How Pools Use Long Queues</title></head><body>'
+    + '<h1>[2307.03172] Connection Pool Sizing: How Pools Use Long Queues</h1>'
+    + '<p>Title: Connection Pool Sizing: How Pools Use Long Queues</p>'
+    + '<p>View a PDF of the paper titled Connection Pool Sizing: How Pools Use Long Queues, by Nelson F.</p>'
+    + '<h2>Why connection pool sizing is important to building fast services</h2>'
+    + '<p>In this post, we will explore how a connection pool behaves under heavy load.</p>'
+    + '<p>Jt. title ( "Connection pool demo" ). use ( connection ). pool ();</p>'
+    + '<p>A connection pool with more than 20 connections increased latency in every run we measured.</p>'
+    + '<h3>A connection pool must be closed before the process exits.</h3>'
+    + '<p>Call pool.connect() before each query so the connection pool can recycle sessions.</p></body></html>'), T, { claims: 10 });
+  is(titled.claims.map((c) => c.text).sort().join('|'),
+     ['A connection pool must be closed before the process exits.',
+      'A connection pool with more than 20 connections increased latency in every run we measured.',
+      'Call pool.connect() before each query so the connection pool can recycle sessions.'].join('|'),
+     'title, title wrapper, bare heading, signpost and code are not claims; a sentence heading and inline code are');
+
+  // Widening: a match-every-term engine answers a long query with nothing and
+  // its leading terms with results. Deterministic: a stub provider, no network.
+  const { findCandidates, PROVIDERS } = require('../lib/search');
+  const asked = [];
+  const stub = { name: 'stub', kinds: ['test-only'], async run(q) {
+    asked.push(q);
+    if (q.split(' ').length > 3) return [];
+    return [{ url: 'https://a.test/1', title: 'Deep research agent planner design' },
+            { url: 'https://a.test/2', title: 'Deep sea fishing' }];
+  } };
+  const full = { name: 'full', kinds: ['test-only'], async run(q) {
+    asked.push('full:' + q);
+    return [{ url: 'https://b.test/1', title: 'Research agent token cost' }];
+  } };
+  PROVIDERS.push(stub, full);
+  try {
+    const w = await findCandidates('deep research agent planner token cost', { kinds: ['test-only'], langs: ['en'] });
+    is(asked.filter((q) => q === 'deep research agent').length, 1, 'an empty provider is re-asked with the leading terms');
+    is(asked.filter((q) => q.startsWith('full:')).length, 1, 'a provider that returned results is not re-asked');
+    is(w.candidates.map((c) => c.url).join(' '), 'https://a.test/1 https://b.test/1',
+       'widened results are still filtered against every term of the question');
+    is(w.widened && `${w.widened.query}/${w.widened.providers}`, 'deep research agent/stub', 'the widened query and provider are reported');
+  } finally {
+    PROVIDERS.splice(PROVIDERS.indexOf(stub), 2);
+  }
 
   // "I could not open this" and "I read it and it said nothing" are different
   // answers, and only the first belongs under could_not_establish.

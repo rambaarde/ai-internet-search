@@ -68,6 +68,8 @@ flags:
                   its logins (start it with --remote-debugging-port=9222
                   --user-data-dir=DIR; URL e.g. http://127.0.0.1:9222; Node 22+)
   --limit N       maximum sources to open (default 3)
+  --claims N      claims to quote per source (default 3; raise for depth,
+                  lower to spend fewer tokens)
   --per-host N    maximum sources per host (default 1)
   --json          emit JSON instead of TOON
   --report        also write a standalone HTML report and print its path
@@ -79,7 +81,7 @@ exit codes:
   0 success   1 error   2 bad usage`;
 
 function parseArgs(argv) {
-  const opts = { limit: 3, perHost: 1, plan: false, json: false, report: null, render: false, browser: '' };
+  const opts = { limit: 3, claims: 3, perHost: 1, plan: false, json: false, report: null, render: false, browser: '' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -101,6 +103,12 @@ function parseArgs(argv) {
       opts.report = a.startsWith('--report=') ? a.slice('--report='.length) : '';
     }
     else if (a === '--limit') opts.limit = Number(argv[++i]);
+    else if (a === '--claims') {
+      // Not NaN-tolerant like --limit: extraction stops at `claims`, so NaN
+      // would quote every sentence on the page, the opposite of the intent.
+      opts.claims = Number(argv[++i]);
+      if (!Number.isInteger(opts.claims) || opts.claims < 1) return { badFlag: '--claims (needs a whole number of 1 or more)' };
+    }
     else if (a === '--per-host') opts.perHost = Number(argv[++i]);
     // AXI: an unknown flag fails loudly rather than being swallowed as text.
     else if (a.startsWith('--')) return { badFlag: a };
@@ -151,7 +159,7 @@ async function main() {
   // --plan stops before any page is fetched. Useful for seeing what would be
   // read, and for costing a question before paying for it.
   const opened = opts.plan ? chosen.map((c) => ({ ...c, read: false, reason: 'not fetched (--plan)', claims: [] }))
-                           : await readSources(chosen, terms, { render: opts.render, browser: opts.browser, directOnly: sourceOnly });
+                           : await readSources(chosen, terms, { render: opts.render, browser: opts.browser, directOnly: sourceOnly, claims: opts.claims });
   const conflicts = opts.plan ? [] : findConflicts(opened);
   const certainty = opts.plan ? { level: 'n/a', why: 'planning only' } : grade(opened, conflicts);
   const missing = gaps(opened, terms);
@@ -168,6 +176,7 @@ async function main() {
       // omits --limit 5 does not reproduce anything.
       const flags = [
         opts.limit !== 3 ? `--limit ${opts.limit}` : '',
+        opts.claims !== 3 ? `--claims ${opts.claims}` : '',
         opts.perHost !== 1 ? `--per-host ${opts.perHost}` : '',
         opts.browser ? `--browser ${opts.browser}` : opts.render ? '--render' : '',
         '--report',
@@ -178,7 +187,7 @@ async function main() {
       const chosenUrls = new Set(chosen.map((c) => c.url));
       const skipped = effective
         .filter((c) => !chosenUrls.has(c.url))
-        .map((c) => ({ url: c.url, ...gradeSource(c.url) }))
+        .map((c) => ({ url: c.url, ...gradeSource(c.url, { terms }) }))
         .sort((a, b) => a.tier - b.tier);
       writeFileSync(reportPath, renderReport({ question: opts.question, query, certainty,
         sources: opened, conflicts, gaps: missing, providers: found.providers,
@@ -199,7 +208,7 @@ async function main() {
 
   if (opts.json) {
     return out(JSON.stringify({ question: opts.question, query, kinds: kindsFor(opts.question),
-      providers: found.providers, failed: found.failed, candidates: effective.length,
+      providers: found.providers, failed: found.failed, widened: found.widened, candidates: effective.length,
       directives: hasDirectives ? { applied: scoped.applied, relaxed: scoped.relaxed, found: found.candidates.length } : null,
       certainty, decisions: { query: queryDecision, research: researchDecision }, conflicts, gaps: missing, sources: opened }, null, 2), 0);
   }
@@ -209,6 +218,8 @@ async function main() {
   lines.push(`query: ${query}`);
   lines.push(`handler: ${queryDecision.handler.value} · fan_out: parallel (${queryDecision.providerKinds.join(',')})`);
   lines.push(`providers: ${found.providers.join(',') || 'none'}${found.failed.length ? `  unreachable: ${found.failed.join(',')}` : ''}`);
+  // Said, never silent: these candidates matched fewer words than were typed.
+  if (found.widened) lines.push(`widened: "${found.widened.query}" for ${found.widened.providers.join(',')} (the full query matched nothing there)`);
   if (directiveLine) lines.push(directiveLine);
   // Say it plainly when --render was asked for but cannot happen: a silent
   // no-op would look like rendering was tried and failed.
@@ -286,6 +297,15 @@ async function main() {
     if (missing.missingTerms.length) {
       lines.push(`  nothing read addressed: ${missing.missingTerms.join(', ')}`);
     }
+    lines.push('');
+  }
+
+  // The follow-up searches an agent can run next, one per gap, deduplicated
+  // and capped: three short queries cost less than one wide re-read.
+  const nextQueries = [...new Set(missing.next)].slice(0, 3);
+  if (nextQueries.length) {
+    lines.push(`next_queries[${nextQueries.length}]:`);
+    for (const q of nextQueries) lines.push(`  ai-internet-search "${q}"`);
     lines.push('');
   }
 
