@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.7.0...ai-internet-search-v0.7.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* do not suggest a next query that repeats the question ([b55d188](https://github.com/rambaarde/ai-internet-search/commit/b55d1888ff4b6a1300af2d3f324e71632a21f816))
+
 ## [0.7.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.1...ai-internet-search-v0.7.0) (2026-09-25)
 
 
