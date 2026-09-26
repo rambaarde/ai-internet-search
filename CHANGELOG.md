@@ -5,8 +5,6 @@
 
 ### Bug Fixes
 
-* do not suggest a next query that repeats the question ([cf64389](https://github.com/rambaarde/ai-internet-search/commit/cf64389350c0f3872be562c63dbc8274d046066a))
-* do not suggest a next query that repeats the question ([4efd6e4](https://github.com/rambaarde/ai-internet-search/commit/4efd6e465ed820005bf5764b406c7a8c59b42845))
 * do not suggest a next query that repeats the question ([b55d188](https://github.com/rambaarde/ai-internet-search/commit/b55d1888ff4b6a1300af2d3f324e71632a21f816))
 
 ## [0.7.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.6.1...ai-internet-search-v0.7.0) (2026-09-25)
