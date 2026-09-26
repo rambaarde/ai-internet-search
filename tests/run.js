@@ -453,6 +453,12 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   is(g.next.join('|'), 'deep research planner|deep research cost', 'each gap gets a short next query led by covered terms');
   is(gaps([{ read: true, direct: true, claims: [] }], ['owner', 'repo']).next.length, 0,
      'a direct URL has no gaps, so no next queries');
+  // A short question has no narrower search: the only candidate is the same
+  // words reordered ("deep research leaderboard" -> "research leaderboard deep").
+  const short = gaps([{ read: true, claims: [{ text: 'The research leaderboard ranks agents.' }] }],
+    ['deep', 'research', 'leaderboard']);
+  is(short.missingTerms.join(' '), 'deep', 'a short question still reports its gap');
+  is(short.next.join('|'), '', 'but suggests no next query that repeats the question');
 }
 
 // --- MCP server -------------------------------------------------------------
