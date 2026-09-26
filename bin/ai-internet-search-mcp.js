@@ -143,7 +143,7 @@ async function research(question, { limit = 3, plan = false, claims = 3 } = {}) 
     out.push('');
   }
 
-  const nextQueries = [...new Set(missing.next)].slice(0, 3);
+  const nextQueries = [...new Set(missing.next.filter(Boolean))].slice(0, 3);
   if (nextQueries.length) out.push(`next_queries[${nextQueries.length}]:`, ...nextQueries.map((q) => `  ${q}`), '');
 
   out.push(`sources[${opened.length}]{tier,host,url,sha256}:`);

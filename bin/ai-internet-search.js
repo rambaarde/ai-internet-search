@@ -302,7 +302,7 @@ async function main() {
 
   // The follow-up searches an agent can run next, one per gap, deduplicated
   // and capped: three short queries cost less than one wide re-read.
-  const nextQueries = [...new Set(missing.next)].slice(0, 3);
+  const nextQueries = [...new Set(missing.next.filter(Boolean))].slice(0, 3);
   if (nextQueries.length) {
     lines.push(`next_queries[${nextQueries.length}]:`);
     for (const q of nextQueries) lines.push(`  ai-internet-search "${q}"`);
