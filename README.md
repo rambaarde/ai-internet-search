@@ -328,6 +328,12 @@ npm pack --dry-run
 The project has no runtime dependencies. Unit tests use Node's built-in test
 runner; network-dependent checks skip cleanly when offline.
 
+Commits use Conventional Commits; release-please builds `CHANGELOG.md` from
+them. PR titles into `develop` and `main` must be plain text (for example
+"Release develop to main"), not `fix: ...`. PRs are merged with a merge
+commit, which copies the PR title, and a Conventional Commit title adds the
+change to the changelog again. The `pr-title` workflow enforces this.
+
 ## License
 
 MIT
