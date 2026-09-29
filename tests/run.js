@@ -438,6 +438,12 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   is(grade([{ tier: 1, host: 'a', read: true, claims: [{ text: 'x' }] },
             { tier: 2, host: 'b', read: true, claims: [{ text: 'y' }] }], []).level, 'high',
      'a primary source corroborated independently is high');
+  is(grade([{ tier: 2, host: 'vendor', read: true, claims: [{ text: 'x' }] },
+            { tier: 3, host: 'forum', read: true, claims: [{ text: 'y' }] }], []).level, 'low',
+     'a lower-tier page on another host does not corroborate a secondary source');
+  is(grade([{ tier: 1, host: 'a', read: true, claims: [{ text: 'x' }] },
+            { tier: 2, host: 'a', read: true, claims: [{ text: 'y' }] }], []).level, 'moderate',
+     'two pages from one host are not independent corroboration');
   is(grade([{ tier: 4, host: 'a', read: true, claims: [{ text: 'x' }] }], []).level, 'very low',
      'aggregator-only evidence is very low');
   is(grade([{ tier: 1, host: 'a', read: false, claims: [] }], []).level, 'none',
