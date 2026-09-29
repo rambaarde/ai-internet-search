@@ -269,6 +269,11 @@ Other supported keyed providers are `BRAVE_API_KEY`, `TAVILY_API_KEY`, and
 Brave, Tavily, Serper, then Google. Provider results enter the same tiered
 ranking; provider count is never treated as consensus.
 
+`MARGINALIA=1` has a latency cost. On 2026-09-29, the shared public key timed
+out on every multi-term query that was tested, while single-term queries
+answered in about 1 second. A timed-out provider is reported under `failed`
+and is not retried, but it can still add up to 10 seconds to each search.
+
 ## MCP and agent clients
 
 Install once to put both binaries on `PATH`:

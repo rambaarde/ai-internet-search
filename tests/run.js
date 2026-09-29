@@ -659,6 +659,22 @@ function finish() {
   } finally {
     PROVIDERS.splice(PROVIDERS.indexOf(stub), 2);
   }
+  // A provider that times out is failed, not empty: re-asking it wider only
+  // doubles the wait (measured: 2 x 10s on a hung Marginalia). Exercised at
+  // the fetch layer, because that is where the failure used to become [].
+  const realFetch = globalThis.fetch;
+  const realMarginalia = process.env.MARGINALIA;
+  const hosts = [];
+  globalThis.fetch = async (url) => { hosts.push(new URL(url).host); throw new Error('timeout'); };
+  process.env.MARGINALIA = '1';
+  try {
+    const d = await findCandidates('deep research agent planner token cost', { langs: ['en'] });
+    is(hosts.length, new Set(hosts).size, 'a provider whose request failed is not re-asked with a wider query');
+    has(d.failed.join(','), 'marginalia', 'a timed-out provider is reported as failed, not as an empty answer');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realMarginalia === undefined) delete process.env.MARGINALIA; else process.env.MARGINALIA = realMarginalia;
+  }
 
   // "I could not open this" and "I read it and it said nothing" are different
   // answers, and only the first belongs under could_not_establish.
