@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.2](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.7.1...ai-internet-search-v0.7.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **assess:** count corroboration only among authoritative hosts ([6d6fc78](https://github.com/rambaarde/ai-internet-search/commit/6d6fc780003e38d17ec99f4f6202b393e34fd470))
+* **decisions:** replace invented probabilities with measured evidence checks ([b9ee33f](https://github.com/rambaarde/ai-internet-search/commit/b9ee33f507eb4114b0fca89c7fdda361a90c42a2))
+* **extract:** read only the &lt;main&gt; content when a page has it ([8b05d00](https://github.com/rambaarde/ai-internet-search/commit/8b05d00dbabb6ad0c2e6d535f55581e349101175))
+* **search:** report a timed-out provider as failed and do not re-ask it ([97de662](https://github.com/rambaarde/ai-internet-search/commit/97de662b1a298e6a1e78a1764f3da2ce45bfb089))
+
 ## [0.7.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.7.0...ai-internet-search-v0.7.1) (2026-09-26)
 
 
