@@ -720,6 +720,20 @@ function finish() {
     src('<html><body><div id="root"><p>A connection pool is a cache of open database sessions.</p></div></body></html>'), T);
   is(shortAnswer.read, true, 'a short page that does answer is not mistaken for an empty shell');
 
+  // Site chrome before <main> (a help-search popup on help.deltek.com) used to
+  // become the first claims of a direct URL, ahead of the page's own content.
+  const chromeFirst = '<html><body><div class="search-help"><ul>'
+    + '<li>Phrase: Returns all topics that contain the exact phrase in the search criteria.</li>'
+    + '<li>And: Returns all topics that contain all the words in the search criteria in any combination.</li>'
+    + '</ul></div><main><p>A connection pool is a cache of open database sessions that requests reuse.</p></main></body></html>';
+  const mainOnly = await extractClaims(src(chromeFirst), [], { directOnly: true });
+  hasnt(mainOnly.claims.map((c) => c.text).join(' '), 'search criteria', 'text outside <main> is not quoted as a claim');
+  has(mainOnly.claims.map((c) => c.text).join(' '), 'cache of open database sessions', 'the <main> content is quoted');
+  // An empty <main> (a client-side mount point) must not hide the page text.
+  const emptyMain = await extractClaims(
+    src('<html><body><main></main><p>A connection pool is a cache of open database sessions that requests reuse.</p></body></html>'), T);
+  is(emptyMain.claims.length >= 1, true, 'an empty <main> falls back to the whole page');
+
   // --- optional headless-browser render (--render) --------------------------
   const { findBrowser, renderPage } = require('../lib/render');
 
