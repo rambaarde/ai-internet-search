@@ -11,7 +11,7 @@ const { tmpdir } = require('node:os');
 const { gradeSource, scoreSource, triage } = require('../lib/sources');
 const { keywords, looksRelevant, kindsFor, languagesFor, fold, directUrl, directCandidate, directOnly } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
-const { choice, score, noul, uncertaintyBand, decideQuery, decideResearch, consistencyCheck } = require('../lib/decisions');
+const { choice, uncertaintyBand, decideQuery, decideResearch } = require('../lib/decisions');
 
 const BIN = join(__dirname, '..', 'bin', 'ai-internet-search.js');
 let pass = 0;
@@ -28,18 +28,27 @@ const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpec
   const c = choice('route', 'docs', { docs: 0.8, forum: 0.2 }, 0.8);
   is(c.type, 'choice', 'choice decisions carry their primitive type');
   is(c.value, 'docs', 'choice decisions carry a bounded value');
-  is(score('relevance', 1.4, 0, 1).value, '1', 'score decisions stay inside their declared scale');
-  is(noul('sufficient', -1).value, '0', 'noul decisions stay inside probability bounds');
   is(uncertaintyBand('review', 0.2).value, 'no', 'low probabilities stay below the automatic yes threshold');
   is(uncertaintyBand('review', 0.5).value, 'uncertain', 'borderline probabilities become uncertain');
   is(uncertaintyBand('review', 0.8).value, 'yes', 'high probabilities clear the automatic yes threshold');
-  is(consistencyCheck(['a', 'a', 'b'], { kind: 'choice' }).stable, true, 'repeated choices can be consistency-checked');
-  is(consistencyCheck([0.48, 0.52], { kind: 'noul' }).stable, true, 'close probabilities can remain stable');
-  is(consistencyCheck([0.1, 0.9], { kind: 'noul' }).stable, false, 'wide probability spread is unstable');
   is(decideQuery('what is a mutex', ['definition']).queryKind.value, 'definition', 'query decisions identify definition work');
   is(decideQuery('how do I debug a postgres connection pool', ['engineering']).queryKind.value, 'engineering', 'query decisions identify engineering work');
   is(decideQuery('what is a mutex', ['definition']).handler.value, 'reference_sources', 'intent routes definitions to reference sources');
   is(decideQuery('benchmark rate limiters', ['academic']).fanOut.parallel, true, 'intent routing exposes parallel provider fan-out');
+  {
+    const q = decideQuery('how do I debug a postgres connection pool', ['engineering']);
+    is(q.handler.probabilities.engineering_sources, q.queryKind.probabilities.engineering,
+       'the handler carries the query_kind distribution, not a separate invented one');
+  }
+  const band = uncertaintyBand('review', 0.5).probabilities;
+  is(band.no + band.yes, 1, 'a band reports a valid binary split');
+  const sum = (o) => Math.round(Object.values(o).reduce((a, b) => a + b, 0) * 1000) / 1000;
+  is(sum(decideResearch({ opened: [], conflicts: [], certainty: { level: 'none' }, missing: {} }).nextAction.probabilities), 1,
+     'next_action probabilities form a distribution');
+  is(decideResearch({ plan: true, opened: [], conflicts: [], certainty: { level: 'n/a' }, missing: {} }).nextAction.value,
+     'inspect_plan', 'plan mode reports inspect_plan, not a missing-evidence action');
+  is(decideResearch({ plan: true, opened: [{ read: false, claims: [] }], conflicts: [], certainty: { level: 'n/a' }, missing: { missingTerms: ['a'] } }).nextAction.value,
+     'inspect_plan', 'plan mode with would-read sources still reports inspect_plan');
   is(decideResearch({ opened: [], conflicts: [], certainty: { level: 'none' }, missing: {} }).nextAction.value,
      'search_more', 'empty evidence asks the workflow to search more');
   is(decideResearch({ opened: [{}], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).nextAction.value,
@@ -56,12 +65,25 @@ const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpec
       { read: true, tier: 2, host: 'b.example', claims: [{ text: 'y' }] }],
     conflicts: [], certainty: { level: 'moderate' }, missing: { missingTerms: [] },
   }).nextAction.value, 'answer', 'independent tier-2 corroboration can answer');
+  {
+    const secondary = decideResearch({
+      opened: [{ read: true, tier: 2, host: 'vendor.example', claims: [{ text: 'x' }] },
+        { read: true, tier: 3, host: 'forum.example', claims: [{ text: 'y' }] }],
+      conflicts: [], certainty: { level: 'low' }, missing: { missingTerms: [] },
+    }).evidenceSufficient;
+    is(secondary.value, 'uncertain', 'evidence cannot read yes beside an escalated action');
+    is(secondary.checks.authoritative, false, 'the failed evidence check is named');
+  }
+  is(decideResearch({ opened: [{ read: true, tier: 1, host: 'docs.example', claims: [{ text: 'x' }] }], conflicts: [], certainty: { level: 'moderate' }, missing: { missingTerms: [] } }).evidenceSufficient.value,
+     'yes', 'evidence is sufficient when every check passes');
+  is(decideResearch({ opened: [{ read: false, claims: [] }], conflicts: [], certainty: { level: 'none' }, missing: { missingTerms: ['a'] } }).evidenceSufficient.value,
+     'no', 'nothing readable is insufficient evidence');
   is(decideResearch({
     directOnly: true,
     opened: [{ read: true, tier: 1, host: 'docs.example', claims: [{ text: 'x' }] }],
     conflicts: [], certainty: { level: 'moderate' }, missing: { missingTerms: [] },
   }).nextAction.value, 'escalate_uncertainty', 'a source-only URL stays in review without a question');
-  is(decideResearch({ opened: [{}], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).evidenceSufficient.value,
+  is(decideResearch({ opened: [{ read: true, tier: 1, host: 'docs.example', claims: [{ text: 'x' }] }], conflicts: [{}], certainty: { level: 'moderate' }, missing: {} }).evidenceSufficient.value,
      'uncertain', 'conflicting evidence enters the review band');
 }
 
@@ -438,6 +460,12 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   is(grade([{ tier: 1, host: 'a', read: true, claims: [{ text: 'x' }] },
             { tier: 2, host: 'b', read: true, claims: [{ text: 'y' }] }], []).level, 'high',
      'a primary source corroborated independently is high');
+  is(grade([{ tier: 2, host: 'vendor', read: true, claims: [{ text: 'x' }] },
+            { tier: 3, host: 'forum', read: true, claims: [{ text: 'y' }] }], []).level, 'low',
+     'a lower-tier page on another host does not corroborate a secondary source');
+  is(grade([{ tier: 1, host: 'a', read: true, claims: [{ text: 'x' }] },
+            { tier: 2, host: 'a', read: true, claims: [{ text: 'y' }] }], []).level, 'moderate',
+     'two pages from one host are not independent corroboration');
   is(grade([{ tier: 4, host: 'a', read: true, claims: [{ text: 'x' }] }], []).level, 'very low',
      'aggregator-only evidence is very low');
   is(grade([{ tier: 1, host: 'a', read: false, claims: [] }], []).level, 'none',
@@ -658,6 +686,22 @@ function finish() {
     is(w.widened && `${w.widened.query}/${w.widened.providers}`, 'deep research agent/stub', 'the widened query and provider are reported');
   } finally {
     PROVIDERS.splice(PROVIDERS.indexOf(stub), 2);
+  }
+  // A provider that times out is failed, not empty: re-asking it wider only
+  // doubles the wait (measured: 2 x 10s on a hung Marginalia). Exercised at
+  // the fetch layer, because that is where the failure used to become [].
+  const realFetch = globalThis.fetch;
+  const realMarginalia = process.env.MARGINALIA;
+  const hosts = [];
+  globalThis.fetch = async (url) => { hosts.push(new URL(url).host); throw new Error('timeout'); };
+  process.env.MARGINALIA = '1';
+  try {
+    const d = await findCandidates('deep research agent planner token cost', { langs: ['en'] });
+    is(hosts.length, new Set(hosts).size, 'a provider whose request failed is not re-asked with a wider query');
+    has(d.failed.join(','), 'marginalia', 'a timed-out provider is reported as failed, not as an empty answer');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realMarginalia === undefined) delete process.env.MARGINALIA; else process.env.MARGINALIA = realMarginalia;
   }
 
   // "I could not open this" and "I read it and it said nothing" are different

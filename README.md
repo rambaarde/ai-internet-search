@@ -97,38 +97,48 @@ model dependency:
 query_kind: definition | engineering | academic
 decision: answer | search_more | escalate_uncertainty | inspect_plan
 evidence_sufficient: no | uncertain | yes
-probability: 0..1
+checks: readable, authoritative, agreement, coverage, question (true | false)
 ```
 
 The same decision is available in TOON output, `--json`, and the MCP
 `research` tool. The evaluator is isolated in `lib/decisions.js`, so a future
 local model can replace the heuristic without changing the output contract.
 
+No number in the decision object is invented. `query_kind` probabilities are
+the normalized keyword weights. `handler` and `source_strategy` are fixed
+functions of `query_kind`, so they carry the same distribution. `next_action`
+comes from a rule, so it reports a one-hot distribution with confidence 1. That
+is the rule's certainty about its own output, not a claim that the answer is
+true. Calibrated probabilities need a model, and this tool uses none.
+
 Readable sources also carry a `contentHash`: the full JSON output exposes the
 SHA-256 fingerprint of the exact bytes fetched, while compact output shows its
 first 16 characters as `sha256`. This is an audit signal for comparing runs,
 not a permanent guarantee that a URL has not changed.
 
-The research plan includes four Jev-inspired controls:
+The research plan uses three Jev-inspired controls:
 
 - intent routing selects a reference, engineering, or academic handler;
-- eligible providers can fan out in parallel;
-- source scoring combines authority, title relevance, and URL freshness;
-- an optional consistency hook can mark repeated borderline outputs unstable.
+- eligible providers fan out in parallel, and a provider that times out is
+  reported under `failed`, not asked again;
+- source scoring combines authority, title relevance, and URL freshness.
 
-The last item does not trigger repeated network searches by default. If the
-evidence is insufficient, the result tells the caller whether to answer,
+If the evidence is insufficient, the result tells the caller whether to answer,
 inspect the plan, search more, or escalate uncertainty. That keeps iteration
 under the control of the calling agent.
 
 An `answer` decision also requires authoritative support: at least one tier-1
-source, or independent corroboration from two tier-2 sources. A moderate grade
-from one secondary source is therefore still escalated for review.
+source, or independent corroboration from two tier-2 sources on different
+hosts. A moderate grade from one secondary source is therefore still escalated
+for review.
 
-The default uncertainty band for binary decisions is `< 0.30 → no`,
-`0.30–0.70 → uncertain`, and `> 0.70 → yes`. These are starting thresholds,
-not calibration guarantees; tune them against labeled examples and the cost of
-wrong automation versus human review. The pattern is adapted from TypeSafe's
+`evidence_sufficient` answers five independent checks in one pass: a source
+was readable, the support is authoritative, the sources agree, every query term
+is covered, and a specific question was asked. Its `probability` is the share
+of checks that passed. It is a measured fraction, not a calibrated probability.
+The band gives `no` below 0.30 and `yes` only when every check passed, so the
+band cannot say `yes` next to an escalated action. The band pattern comes from
+TypeSafe's
 [self-consistency cookbook](https://docs.typesafe.ai/cookbooks/consistency_noul_cookbook).
 
 ## One question, one pass
@@ -268,6 +278,11 @@ Other supported keyed providers are `BRAVE_API_KEY`, `TAVILY_API_KEY`, and
 `SERPER_API_KEY`. The first available keyed provider is used in the order
 Brave, Tavily, Serper, then Google. Provider results enter the same tiered
 ranking; provider count is never treated as consensus.
+
+`MARGINALIA=1` has a latency cost. On 2026-09-29, the shared public key timed
+out on every multi-term query that was tested, while single-term queries
+answered in about 1 second. A timed-out provider is reported under `failed`
+and is not retried, but it can still add up to 10 seconds to each search.
 
 ## MCP and agent clients
 
