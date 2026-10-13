@@ -129,7 +129,13 @@ process.on('exit', () => {
 is(gradeSource('https://www.postgresql.org/docs/current/x.html').tier, 1, 'official docs are tier 1');
 is(gradeSource('https://datatracker.ietf.org/doc/html/rfc9110').tier, 1, 'a standards body is tier 1');
 is(gradeSource('https://github.com/o/r/blob/main/x.js').tier, 1, 'source code is tier 1');
-is(gradeSource('https://arxiv.org/abs/2505.17762').tier, 2, 'a preprint is tier 2');
+// A preprint has not passed peer review: it ranks below a journal paper and
+// does not count as tier 1-2 corroboration (callingbullshit.org, tools_legit).
+is(gradeSource('https://arxiv.org/abs/2505.17762').tier, 3, 'a preprint is tier 3, below peer review');
+is(gradeSource('https://www.nature.com/articles/x').tier, 2, 'a peer-reviewed journal is tier 2');
+// A retraction outranks the venue: a retracted Nature paper ranks below an
+// unrecognised blog.
+is(gradeSource('https://www.nature.com/articles/x', { retracted: true }).tier, 4, 'a retracted paper is tier 4 on any host');
 is(gradeSource('https://stackoverflow.com/questions/1').tier, 3, 'practitioner Q&A is tier 3');
 is(gradeSource('https://medium.com/@x/post').tier, 4, 'a content aggregator is tier 4');
 is(gradeSource('https://top10devblogs.com/best-10-tips').tier, 4, 'an SEO listicle is tier 4');
@@ -162,6 +168,11 @@ is(gradeSource('https://medium.com/@anthropic/x', { terms: ['medium'] }).tier, 4
   is(keep.filter((c) => c.host === 'medium.com').length, 1, 'triage takes at most one source per host');
   is(triage(cands, { limit: 2 }).length, 2, 'triage honours the open limit');
   is(triage([], {}).length, 0, 'triage of nothing is nothing, not an error');
+  const papers = triage([
+    { url: 'https://www.nature.com/articles/a', title: 'a', retracted: true },
+    { url: 'https://doi.org/10.1/b', title: 'b' },
+  ], { limit: 2, perHost: 1 });
+  is(papers.map((c) => c.why).join('|'), 'unclassified|retracted paper', 'triage reads a retracted paper last and says why');
 }
 
 // --- query shaping ----------------------------------------------------------
@@ -702,6 +713,26 @@ function finish() {
   } finally {
     globalThis.fetch = realFetch;
     if (realMarginalia === undefined) delete process.env.MARGINALIA; else process.env.MARGINALIA = realMarginalia;
+  }
+  // OpenAlex reports retractions; a retracted work must reach triage as such,
+  // not as an ordinary DOI.
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ results: [
+    { doi: 'https://doi.org/10.1/retracted', title: 'RETRACTED: Retracted trial', is_retracted: true, type: 'article' },
+    { doi: 'https://doi.org/10.1/sound', title: 'Sound trial', is_retracted: false, type: 'article' },
+    // OpenAlex keeps unflagged duplicate records of a retracted paper.
+    { doi: null, id: 'https://openalex.org/W1', title: 'Retracted trial.', is_retracted: false, type: 'article' },
+    // OpenAlex flags the retraction notice too; it is the best source on it.
+    { doi: 'https://doi.org/10.1/notice', title: 'Retraction notice', is_retracted: true, type: 'retraction' },
+    // Records imported from other indexes say it only in the title.
+    { doi: null, id: 'https://openalex.org/W2', title: 'Other trial (Retracted article. See vol 1, pg 2, 2010)', is_retracted: false, type: 'article' },
+  ] }) });
+  try {
+    const works = await PROVIDERS.find((p) => p.name === 'openalex').run('trial');
+    is(triage(works, { limit: 5, perHost: 5 }).map((c) => `${c.title.slice(0, 15)}:${c.tier}`).join('|'),
+       'Sound trial:3|Retraction noti:3|RETRACTED: Retr:4|Retracted trial:4|Other trial (Re:4',
+       'a work flagged is_retracted, marked retracted in its title, or a duplicate of one, is read last; its notice is not');
+  } finally {
+    globalThis.fetch = realFetch;
   }
 
   // "I could not open this" and "I read it and it said nothing" are different
