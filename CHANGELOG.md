@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.7.2...ai-internet-search-v0.8.0) (2026-10-13)
+
+
+### Features
+
+* **sources:** rank preprints below peer review and retracted papers last ([663d090](https://github.com/rambaarde/ai-internet-search/commit/663d0907046e681077b88b3014a86ccddcecd565))
+
 ## [0.7.2](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.7.1...ai-internet-search-v0.7.2) (2026-10-02)
 
 
