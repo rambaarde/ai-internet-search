@@ -187,7 +187,7 @@ async function main() {
       const chosenUrls = new Set(chosen.map((c) => c.url));
       const skipped = effective
         .filter((c) => !chosenUrls.has(c.url))
-        .map((c) => ({ url: c.url, ...gradeSource(c.url, { terms }) }))
+        .map((c) => ({ url: c.url, ...gradeSource(c.url, { terms, retracted: c.retracted }) }))
         .sort((a, b) => a.tier - b.tier);
       writeFileSync(reportPath, renderReport({ question: opts.question, query, certainty,
         sources: opened, conflicts, gaps: missing, providers: found.providers,
