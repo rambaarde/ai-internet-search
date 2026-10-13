@@ -77,15 +77,25 @@ The source tiers are deliberately explainable:
 | Tier | Typical sources | Meaning |
 | --- | --- | --- |
 | 1 | Official docs, specifications, RFCs, source, changelogs, registries | The thing itself |
-| 2 | Papers, issue threads, vendor engineering blogs | People who built or study it |
-| 3 | Practitioner Q&A, reference sites, forums | Useful secondary evidence |
-| 4 | Content aggregators and SEO listicles | Lowest default trust |
+| 2 | Peer-reviewed papers, issue threads, vendor engineering blogs | People who built or study it |
+| 3 | Practitioner Q&A, reference sites, forums, preprints | Useful secondary evidence |
+| 4 | Content aggregators, SEO listicles, retracted papers | Lowest default trust |
 
 An unrecognised host starts at tier 3. Unknown is not automatically junk.
 
 A vendor engineering blog moves to tier 1 ("vendor on its own product") when
 the question names that vendor, or when you give its URL directly. Anthropic's
 post about Anthropic's own system is the first-hand account of that system.
+
+Two rules come from [Calling Bullshit](https://callingbullshit.org/tools/tools_legit.html):
+
+- A preprint (arXiv, bioRxiv, medRxiv, SSRN) is tier 3. It is not junk, but it
+  has not passed peer review, so it does not count as tier 1-2 corroboration.
+- A retracted paper is tier 4 on any host, with the reason `retracted paper`.
+  OpenAlex supplies the flag (`is_retracted`, or a "RETRACTED" title marker).
+  An unflagged duplicate record of the same paper in the same results is
+  marked too. The retraction notice itself keeps its normal tier. The paper
+  stays visible, because the question can be about the retraction.
 
 ## Typed decisions and uncertainty
 
