@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.8.0...ai-internet-search-v0.8.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **decisions:** weight query kinds by rank so ties keep the citation index ([42ad01d](https://github.com/rambaarde/ai-internet-search/commit/42ad01d8c06f737b81f065a160eff4c52284eeb8))
+
 ## [0.8.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.7.2...ai-internet-search-v0.8.0) (2026-10-13)
 
 
