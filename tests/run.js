@@ -40,6 +40,14 @@ const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpec
     is(q.handler.probabilities.engineering_sources, q.queryKind.probabilities.engineering,
        'the handler carries the query_kind distribution, not a separate invented one');
   }
+  // kindsFor lists kinds most relevant first; a flat +0.3 per kind threw the
+  // order away, so ties fell to QUERY_KINDS order. "gottman contempt" went to
+  // the definition route, which drops the citation index, and "... research"
+  // was labelled engineering.
+  has(decideQuery('gottman contempt', kindsFor('gottman contempt')).providerKinds.join(','), 'academic',
+      'a query with no intent words still reaches the citation index');
+  is(decideQuery('gottman contempt research', kindsFor('gottman contempt research')).queryKind.value, 'academic',
+     'a research question is routed as academic, not engineering');
   const band = uncertaintyBand('review', 0.5).probabilities;
   is(band.no + band.yes, 1, 'a band reports a valid binary split');
   const sum = (o) => Math.round(Object.values(o).reduce((a, b) => a + b, 0) * 1000) / 1000;
