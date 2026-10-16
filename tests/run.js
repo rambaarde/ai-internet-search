@@ -548,6 +548,18 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
     ['deep', 'research', 'leaderboard']);
   is(short.missingTerms.join(' '), 'deep', 'a short question still reports its gap');
   is(short.next.join('|'), '', 'but suggests no next query that repeats the question');
+  // Measured failure: the decomp.dev page was read and quoted, but its title
+  // "Sunsetting decomp.dev" was never checked, so "sunsetting" was reported as
+  // a gap the source had answered.
+  is(gaps([{ read: true, title: 'Sunsetting decomp.dev', claims: [{ text: 'decomp.dev will keep project pages.' }] }],
+    ['decomp.dev', 'sunsetting']).missingTerms.join(' '), '', 'a term in the title of a read source is covered');
+  is(gaps([{ read: false, title: 'Sunsetting decomp.dev', claims: [] }], ['decomp.dev', 'sunsetting']).missingTerms.length, 2,
+     'the title of an unread source covers nothing');
+  // Measured failure: next_queries suggested "war 3 god" for "God of War 3".
+  is(gaps([{ read: true, claims: [{ text: 'War 3 runs well.' }] }], ['god', 'war', '3', 'port']).next[0], 'god war 3',
+     'a next query keeps the question word order');
+  is(gaps([{ read: true, claims: [{ text: 'Released in 2023.' }] }], ['witcher', '3']).missingTerms.join(' '), 'witcher 3',
+     'a number inside a longer number is not coverage');
 }
 
 // --- MCP server -------------------------------------------------------------
@@ -836,6 +848,21 @@ function finish() {
     + '.innerHTML="The connection pool should be set to ten connections for this workload.";</script></body></html>';
   const notRendered = await extractClaims(src(jsShell), T, { render: false });
   is(notRendered.read, false, 'without --render, a client-rendered page is left dropped');
+
+  // A 403 read like a missing page, so the agent moved on instead of retrying
+  // in a browser. A local server stands in for a site that blocks the fetch.
+  {
+    const http = require('node:http');
+    const server = http.createServer((req, res) => { res.writeHead(req.url === '/limited' ? 429 : 403); res.end(); });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const blocked = await extractClaims({ url: base + '/page', title: 't', tier: 3, host: '127.0.0.1', why: 'w' }, T);
+    has(blocked.reason, 'blocked by the site', 'a 403 is reported as a block, not as a missing page');
+    has(blocked.reason, '--browser', 'a 403 names the flag that can read the page');
+    const limited = await extractClaims({ url: base + '/limited', title: 't', tier: 3, host: '127.0.0.1', why: 'w' }, T);
+    has(limited.reason, 'rate limited', 'a 429 is reported as rate limiting');
+    server.close();
+  }
   // The rescue itself spawns a browser (slow) and needs one installed, so it
   // runs in the tally IIFE below -- which is what actually awaits before the
   // final count and process.exit.
