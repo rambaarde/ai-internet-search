@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.8.1...ai-internet-search-v0.9.0) (2026-10-16)
+
+
+### Features
+
+* **news:** add a keyless recent-news provider from outlet feeds ([691a772](https://github.com/rambaarde/ai-internet-search/commit/691a772f9cd420ef7de098328b20cffe3a1c01d0))
+
+
+### Bug Fixes
+
+* **assess:** count read titles as coverage and keep query order ([2ad8562](https://github.com/rambaarde/ai-internet-search/commit/2ad8562b4c5b07e3a446c45b46432b1c6137a5fe))
+* **search:** keep short numbers and match terms at word starts ([bd61f5e](https://github.com/rambaarde/ai-internet-search/commit/bd61f5e2b20485a723f8086c3320371bca1bfb8f))
+
 ## [0.8.1](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.8.0...ai-internet-search-v0.8.1) (2026-10-15)
 
 
