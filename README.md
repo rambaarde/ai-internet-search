@@ -270,9 +270,26 @@ are done.
 ## General-web recall
 
 The default providers are keyless and focused: Wikipedia, OpenAlex, DOAJ,
-Hacker News, GitHub issues, and Stack Overflow. They cover reference,
-academic, practitioner, and bug-diagnosis questions, but not all general-web
-"how do I..." searches.
+Hacker News, GitHub issues, Stack Overflow, and news feeds. They cover
+reference, academic, practitioner, bug-diagnosis, and recent-news questions,
+but not all general-web "how do I..." searches.
+
+### Recent news
+
+A question with a news cue (a year such as `2026`, or words such as `latest`,
+`announced`, `released`, `criticism`, `DMCA`, `shut down`) also reads the
+public RSS and Atom feeds of 17 tech and games outlets, including The Verge,
+Ars Technica, TechCrunch, GamesRadar+, Eurogamer, and Kotaku. The full list is
+in `lib/providers/news.js`. Only the title, link, and date of each story are
+used, and stories are kept only when their title matches the question.
+
+- A feed lists only an outlet's latest 10-100 stories, so this finds news from
+  roughly the last days or weeks. It is not an archive.
+- News outlets grade as tier 3 (`news report (secondhand)`). Look for the
+  primary source the story cites.
+- The feeds are fetched once and reused for 10 minutes.
+- Bing News and Google News search feeds are not used: both state that they are
+  for personal, non-commercial use in a feed reader.
 
 Enable a general-web provider when you need broader recall:
 

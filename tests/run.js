@@ -12,6 +12,7 @@ const { gradeSource, scoreSource, triage } = require('../lib/sources');
 const { keywords, looksRelevant, kindsFor, languagesFor, fold, directUrl, directCandidate, directOnly } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { choice, uncertaintyBand, decideQuery, decideResearch } = require('../lib/decisions');
+const { parseFeed } = require('../lib/providers/news');
 
 const BIN = join(__dirname, '..', 'bin', 'ai-internet-search.js');
 let pass = 0;
@@ -48,6 +49,12 @@ const hasnt = (s, sub, m) => (!String(s).includes(sub) ? ok(m) : nok(m, `unexpec
       'a query with no intent words still reaches the citation index');
   is(decideQuery('gottman contempt research', kindsFor('gottman contempt research')).queryKind.value, 'academic',
      'a research question is routed as academic, not engineering');
+  // A cued news question must reach the feeds; the decision rebuilt providers
+  // from a fixed list of three kinds, which would drop "news" silently.
+  is(decideQuery('god of war 3 port criticism 2026', kindsFor('god of war 3 port criticism 2026')).providerKinds[0], 'news',
+     'a news question routes to the news feeds first');
+  has(decideQuery('benchmark results announced 2026', kindsFor('benchmark results announced 2026')).providerKinds.join(','), 'news',
+      'a news cue keeps the feeds even when another kind wins');
   const band = uncertaintyBand('review', 0.5).probabilities;
   is(band.no + band.yes, 1, 'a band reports a valid binary split');
   const sum = (o) => Math.round(Object.values(o).reduce((a, b) => a + b, 0) * 1000) / 1000;
@@ -190,6 +197,10 @@ is(keywords('how big should my postgres connection pool be'), 'postgres connecti
 is(keywords('what is a connection pool'), 'connection pool', 'question framing is stripped');
 hasnt(keywords('should I use the thing'), 'should', 'stopwords are removed');
 ok(keywords('the a is').length > 0 ? 'a question of only stopwords still yields a query' : 'x');
+// Measured failure: "God of War 3" became "god war" and "Zelda 64" became
+// "zelda", so the search asked about the whole series.
+is(keywords('God of War 3 decompilation port'), 'god war 3 decompilation port', 'a short number in a title is kept');
+is(keywords('Zelda 64 recomp'), 'zelda 64 recomp', 'a two-digit number is kept');
 
 const direct = 'https://github.com/browser-use/jev-ultrafast';
 is(directUrl(`research this: ${direct}`), direct, 'an explicit web URL is detected');
@@ -202,6 +213,15 @@ has(directPlan.out, direct, 'a direct URL is preserved in the research plan');
 
 is(looksRelevant('About Database Connection Pool Sizing', ['connection', 'pool']), 'true', 'a matching title is relevant');
 is(looksRelevant('Show HN: I made an MCP server', ['connection', 'pool']), 'false', 'an unrelated title is rejected');
+is(looksRelevant('Witcher 3 now runs on Mac', ['witcher', '3']), 'true', 'a number matches as its own token');
+is(looksRelevant('The Witcher 2023 retrospective', ['witcher', '3']), 'false', 'a number does not match inside a longer number');
+// Measured failure: a God of War question surfaced GTA 6 stories, because
+// "2026" and "port" (inside "support") counted as two topic hits.
+is(looksRelevant('GTA 6 makes the 2026 Game Awards cut-off, with support for', ['god', 'war', '3', 'port', '2026']), 'false',
+   'a year and a word fragment do not make a story relevant');
+is(looksRelevant('Fan ports of God of War arrive', ['god', 'war', 'port', '2026']), 'true',
+   'a term matches the start of a longer word');
+is(looksRelevant('Calendar for 2026', ['2026']), 'true', 'a question of only a year still matches on the year');
 
 is(kindsFor('what is a mutex').join(','), 'definition,engineering', 'a definition question picks the reference source');
 is(kindsFor('benchmark of rate limiters').join(','), 'academic,engineering', 'a research question picks the citation index');
@@ -212,6 +232,27 @@ is(kindsFor('should password hashing use argon2id or bcrypt').includes('academic
    'a comparison question still reaches the citation index');
 is(kindsFor('what is a mutex').includes('academic'), false,
    'a plain definition question does not pull from a citation index');
+is(kindsFor('what are the critics of decompilation ports in 2026')[0], 'news', 'a dated question asks the news feeds first');
+is(kindsFor('what is a mutex').includes('news'), false, 'a question with no news cue does not read the news feeds');
+is(kindsFor('state of the art rate limiting').includes('news'), false, '"state of the art" is not a news cue');
+
+// --- news feeds ------------------------------------------------------------
+{
+  const rss = `<rss><channel><title>Outlet</title><item><title><![CDATA[Port &amp; "Recomp" news]]></title>
+    <link>https://example.com/a?x=1&amp;y=2</link><pubDate>Thu, 15 Oct 2026 10:00:00 GMT</pubDate></item>
+    <item><title>No link here</title></item></channel></rss>`;
+  const items = parseFeed(rss, 'Outlet');
+  is(items.length, 1, 'an RSS item without a link is dropped');
+  is(items[0].title, 'Port & "Recomp" news', 'a CDATA title is unwrapped and its entities decoded');
+  is(items[0].url, 'https://example.com/a?x=1&y=2', 'an RSS link is decoded');
+  is(items[0].via, 'news:Outlet', 'a story names its outlet');
+  const atom = `<feed><entry><title>Atom story</title><link rel="self" href="https://example.com/self"/>
+    <link href="https://example.com/story"/><updated>2026-10-15T10:00:00Z</updated></entry></feed>`;
+  is(parseFeed(atom, 'A')[0].url, 'https://example.com/story', 'an Atom entry uses its alternate link, not rel=self');
+  is(parseFeed(atom, 'A')[0].date, '2026-10-15T10:00:00Z', 'an Atom entry keeps its date');
+  is(gradeSource('https://wccftech.com/some-story/').why, 'news report (secondhand)', 'a news outlet is graded as secondhand reporting');
+  is(gradeSource('https://feeds.arstechnica.com/x').tier, 3, 'a feed subdomain of a news outlet is tier 3');
+}
 
 // --- query directives -------------------------------------------------------
 // site:/filetype:/intitle: are pulled out of the question so they scope the
@@ -272,10 +313,11 @@ is(kindsFor('what is a mutex').includes('academic'), false,
   is(pick({ GOOGLE_SEARCH_API_KEY: 'k' }), 'null', 'a Google key without a cx does not select Google');
   is(pick({ GOOGLE_SEARCH_API_KEY: 'k', GOOGLE_SEARCH_CX: 'c' }).engine, 'google', 'a Google key + cx selects Google');
   is(KEYS.includes('GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX'), true, 'KEYS names the Google key pair for the empty-state hint');
-  is(webSearchProvider.kinds.length, 3, 'web search is eligible for every question kind');
+  const ALL_KINDS = ['definition', 'engineering', 'academic', 'news'];
+  is(ALL_KINDS.every((k) => webSearchProvider.kinds.includes(k)), true, 'web search is eligible for every question kind');
   // Marginalia is keyless but OPT-IN, so it never taxes the default fast path.
   const { marginaliaProvider } = require('../lib/providers/websearch');
-  is(marginaliaProvider.kinds.length, 3, 'marginalia is eligible for every question kind');
+  is(ALL_KINDS.every((k) => marginaliaProvider.kinds.includes(k)), true, 'marginalia is eligible for every question kind');
   // pick({}) === null above is the whole no-op contract: run() returns [] iff
   // pick() is null. The live API path (a real key present) is exercised only
   // where a key exists, like the network and render tests.

@@ -240,13 +240,13 @@ async function main() {
     lines.push('');
     lines.push('help[2]:');
     lines.push(`  ai-internet-search "<fewer, more distinctive words>"`);
-    // Name the concrete fix. The key-free providers cover reference/academic
-    // topics; a general-web question needs a search API, so say which env vars
-    // turn one on -- but only when none is already set (if a key is set and it
-    // still found nothing, adding another key is not the advice).
+    // Name the concrete fix. The key-free providers cover reference, academic
+    // and recent-news topics; a general-web question needs a search API, so say
+    // which env vars turn one on -- but only when none is already set (if a key
+    // is set and it still found nothing, adding another key is not the advice).
     lines.push(webActive
       ? `  the general-web providers found nothing either; try built-in web search, or fewer words`
-      : `  key-free providers cover reference/academic only; for general-web recall set MARGINALIA=1 (keyless, free forever), GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX (free 100/day), or a BRAVE/TAVILY/SERPER key`);
+      : `  key-free providers cover reference, academic and recent news only; for general-web recall set MARGINALIA=1 (keyless, free forever), GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX (free 100/day), or a BRAVE/TAVILY/SERPER key`);
     return out(lines.join('\n'), 0);
   }
 
