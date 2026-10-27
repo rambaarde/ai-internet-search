@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.9.0...ai-internet-search-v0.10.0) (2026-10-27)
+
+
+### Features
+
+* **report:** set the HTML report as an operations-handbook page ([c5ddfa3](https://github.com/rambaarde/ai-internet-search/commit/c5ddfa38349d38635c52ea0c2c9304060e143f15))
+
 ## [0.9.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.8.1...ai-internet-search-v0.9.0) (2026-10-16)
 
 
