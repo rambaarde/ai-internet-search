@@ -619,14 +619,16 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   hasnt(html, '@media (prefers-color-scheme', 'no dark theme is defined for a paper');
 
   // The three things TOON flattens.
-  // Certainty is stated in the summary block, before any finding it qualifies.
-  has(html, '<dt>Certainty</dt>', 'certainty is a labeled field, not buried in prose');
-  ok(html.indexOf('<dt>Certainty</dt>') < html.indexOf('Findings') ? 'certainty is stated before the findings' : 'x');
-  // Bottom line up front, and it is a quotation rather than a composed
-  // sentence: composing one would be the single place this tool paraphrased.
-  has(html, '<dt>Bottom line</dt>', 'the decision-relevant line comes first');
-  has(html, 'A pool maintains a set of connections internally.',
-      'the bottom line is quoted from the most credible source, not written');
+  // Certainty is stated in the introduction, before any finding it qualifies.
+  const findingsAt = html.indexOf('Findings');
+  ok(html.includes('Certainty is') && html.indexOf('Certainty is') < findingsAt
+    ? 'certainty is stated before the findings' : 'x');
+  // Bottom line up front, and it is a quotation of the most credible source's
+  // first claim rather than a composed sentence: composing one would be the
+  // single place this tool paraphrased.
+  const quoteAt = html.indexOf('“The latest version deprecates this flag.”');
+  ok(quoteAt > -1 && quoteAt < findingsAt
+    ? 'the bottom line is quoted from the most credible source, before the findings' : 'x');
   has(html, 'Disagreements', 'a disagreement is given its own section');
   has(html, 'postgresql.org', 'both sides of a disagreement are named');
   has(html, 'more authoritative', 'the verdict says why, not which is more numerous');

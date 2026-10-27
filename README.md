@@ -186,7 +186,7 @@ ai-internet-search --limit 5 "<question>"          # open more sources
 ai-internet-search --claims 6 "<question>"         # quote more per source (default 3)
 ai-internet-search --per-host 2 "<question>"       # allow more per host
 ai-internet-search --json "<question>"             # JSON output
-ai-internet-search --report "<question>"           # write an HTML report
+ai-internet-search --report "<question>"           # write a printable HTML report (handbook page)
 ai-internet-search --report=out.html "<question>"  # choose report path
 ai-internet-search --render "<question>"           # retry readable pages in Chromium
 ```
