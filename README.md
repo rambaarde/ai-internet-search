@@ -299,16 +299,17 @@ used, and stories are kept only when their title matches the question.
 - Bing News and Google News search feeds are not used: both state that they are
   for personal, non-commercial use in a feed reader.
 
-Enable another general-web provider when you need more recall:
+Enable a keyed general-web engine when you need more recall:
 
 ```sh
-export BRAVE_API_KEY=...   # or TAVILY_API_KEY, or SERPER_API_KEY
+export SERPER_API_KEY=...   # Google results; or BRAVE_API_KEY, TAVILY_API_KEY
 ai-internet-search "how do I keep a status page realtime"
 ```
 
-The first available keyed provider is used in the order Brave, Tavily,
-Serper, then Google. Provider results enter the same tiered ranking; provider
-count is never treated as consensus.
+Every engine whose key is set runs, in parallel, and each is reported by name
+(`brave`, `tavily`, `serper`, `google`). A second key adds a second index; it
+does not replace the first. Results enter the same tiered ranking, and the
+number of engines that return a page is never treated as consensus.
 
 Google Programmable Search (`GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX`) still
 works for existing keys. Google closed it to new customers and ends it on
@@ -403,6 +404,20 @@ them. PR titles into `develop` and `main` must be plain text (for example
 "Release develop to main"), not `fix: ...`. PRs are merged with a merge
 commit, which copies the PR title, and a Conventional Commit title adds the
 change to the changelog again. The `pr-title` workflow enforces this.
+
+### Measuring recall
+
+`npm run eval:recall` runs 20 live questions from the tool's known weak
+areas: framework docs, error strings, industry reports, market statistics,
+vendor facts, and a reference control. For each question it checks whether a
+candidate matched the primary source (`found`) and whether triage opened it
+(`opened`). It also shows, per provider, how many questions only that provider
+answered. Run it before and after a provider or grading change. It uses about
+20-40 of the 100 daily You.com keyless queries, so it is not part of
+`npm test`. Set `GITHUB_TOKEN` to avoid the GitHub search rate limit.
+
+Result on 2026-11-17, no keyed engine set: found 17/20, opened 14/20. Without
+You.com (`YOUCOM=0`), found was 11/20; You.com alone found 6 of the questions.
 
 ## License
 
