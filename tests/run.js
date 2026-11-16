@@ -300,27 +300,25 @@ is(kindsFor('state of the art rate limiting').includes('news'), false, '"state o
 // required key. The live API calls need a real key, so only the env logic and
 // the no-op are asserted here; the adapters run wherever a key exists.
 {
-  const { pick, webSearchProvider, KEYS } = require('../lib/providers/websearch');
-  is(pick({}), 'null', 'no key configured means no web-search provider');
-  is(pick({ BRAVE_API_KEY: 'x' }).engine, 'brave', 'BRAVE_API_KEY selects Brave');
-  is(pick({ TAVILY_API_KEY: 'x' }).engine, 'tavily', 'TAVILY_API_KEY selects Tavily');
-  is(pick({ SERPER_API_KEY: 'x' }).engine, 'serper', 'SERPER_API_KEY selects Serper');
-  is(pick({ BRAVE_SEARCH_API_KEY: 'x' }).engine, 'brave', 'the alternate BRAVE_SEARCH_API_KEY spelling also works');
-  is(pick({ BRAVE_API_KEY: 'b', TAVILY_API_KEY: 't', SERPER_API_KEY: 's' }).engine, 'brave',
-     'with several keys the first in priority order wins, deterministically');
-  // Google Programmable Search (the free-forever, 100/day option) needs BOTH a
-  // key and a search-engine id -- one alone must not select it.
-  is(pick({ GOOGLE_SEARCH_API_KEY: 'k' }), 'null', 'a Google key without a cx does not select Google');
-  is(pick({ GOOGLE_SEARCH_API_KEY: 'k', GOOGLE_SEARCH_CX: 'c' }).engine, 'google', 'a Google key + cx selects Google');
+  const { configured, keyedProviders, KEYS } = require('../lib/providers/websearch');
+  const engines = (env) => configured(env).map((c) => c.engine).join(',');
+  is(engines({}), '', 'no key configured means no keyed engine');
+  is(engines({ BRAVE_API_KEY: 'x' }), 'brave', 'BRAVE_API_KEY selects Brave');
+  is(engines({ TAVILY_API_KEY: 'x' }), 'tavily', 'TAVILY_API_KEY selects Tavily');
+  is(engines({ SERPER_API_KEY: 'x' }), 'serper', 'SERPER_API_KEY selects Serper');
+  is(engines({ BRAVE_SEARCH_API_KEY: 'x' }), 'brave', 'the alternate BRAVE_SEARCH_API_KEY spelling also works');
+  is(engines({ BRAVE_API_KEY: 'b', TAVILY_API_KEY: 't', SERPER_API_KEY: 's' }), 'brave,tavily,serper',
+     'with several keys every configured engine is used, not only the first');
+  // Google Programmable Search needs BOTH a key and a search-engine id -- one
+  // alone must not select it.
+  is(engines({ GOOGLE_SEARCH_API_KEY: 'k' }), '', 'a Google key without a cx does not select Google');
+  is(engines({ GOOGLE_SEARCH_API_KEY: 'k', GOOGLE_SEARCH_CX: 'c' }), 'google', 'a Google key + cx selects Google');
   is(KEYS.includes('GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX'), true, 'KEYS names the Google key pair for the empty-state hint');
   const ALL_KINDS = ['definition', 'engineering', 'academic', 'news'];
-  is(ALL_KINDS.every((k) => webSearchProvider.kinds.includes(k)), true, 'web search is eligible for every question kind');
+  is(keyedProviders.every((p) => ALL_KINDS.every((k) => p.kinds.includes(k))), true, 'every keyed engine is eligible for every question kind');
   // Marginalia is keyless but OPT-IN, so it never taxes the default fast path.
   const { marginaliaProvider } = require('../lib/providers/websearch');
   is(ALL_KINDS.every((k) => marginaliaProvider.kinds.includes(k)), true, 'marginalia is eligible for every question kind');
-  // pick({}) === null above is the whole no-op contract: run() returns [] iff
-  // pick() is null. The live API path (a real key present) is exercised only
-  // where a key exists, like the network and render tests.
   // You.com keyless search is ON by default (no key exists to gate it), so the
   // off switch and the response mapping are the contract.
   const { youcomEnabled } = require('../lib/providers/websearch');
@@ -803,6 +801,26 @@ function finish() {
          'results.web maps to {url,title,via}; the provider later drops untitled rows');
     } finally {
       globalThis.fetch = realFetch;
+    }
+  }
+  // Several keyed engines run side by side, each reported on its own: a failed
+  // Brave must not hide Serper's results, and must show as unreachable.
+  {
+    const realFetch = globalThis.fetch;
+    const saved = { BRAVE_API_KEY: process.env.BRAVE_API_KEY, SERPER_API_KEY: process.env.SERPER_API_KEY, YOUCOM: process.env.YOUCOM };
+    Object.assign(process.env, { BRAVE_API_KEY: 'b', SERPER_API_KEY: 's', YOUCOM: '0' });
+    globalThis.fetch = async (url) => {
+      if (new URL(url).host !== 'google.serper.dev') throw new Error('down');
+      return { ok: true, json: async () => ({ organic: [{ link: 'https://s.test/pool', title: 'Connection pool sizing' }] }) };
+    };
+    try {
+      const d = await findCandidates('connection pool sizing', { kinds: ['definition'], langs: ['en'] });
+      has(d.providers.join(','), 'serper', 'a working keyed engine contributes even when another one fails');
+      has(d.failed.join(','), 'brave', 'a failed keyed engine is reported as unreachable on its own');
+      is(d.candidates.some((c) => c.url === 'https://s.test/pool'), true, 'the working engine result reaches the candidates');
+    } finally {
+      globalThis.fetch = realFetch;
+      for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
     }
   }
   // OpenAlex reports retractions; a retracted work must reach triage as such,

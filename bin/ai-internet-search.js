@@ -21,7 +21,7 @@
 const { findCandidates, keywords, kindsFor, directCandidate, directOnly } = require('../lib/search');
 const { parseDirectives, applyDirectives } = require('../lib/directives');
 const { findBrowser, cdpProblem } = require('../lib/render');
-const { pick: pickWebSearch, youcomEnabled } = require('../lib/providers/websearch');
+const { configured: configuredWebSearch, youcomEnabled } = require('../lib/providers/websearch');
 const { triage, gradeSource } = require('../lib/sources');
 const { readSources } = require('../lib/extract');
 const { findConflicts, grade, gaps } = require('../lib/assess');
@@ -231,7 +231,7 @@ async function main() {
 
   // AXI: a definitive empty state. Silence is indistinguishable from a crash,
   // and a confident guess is worse than either.
-  const webActive = !!pickWebSearch() || youcomEnabled() || !!process.env.MARGINALIA;
+  const webActive = configuredWebSearch().length > 0 || youcomEnabled() || !!process.env.MARGINALIA;
   if (!opened.length) {
     lines.push(`sources[0]{tier,host,title}:`);
     lines.push('');
