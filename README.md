@@ -405,6 +405,20 @@ them. PR titles into `develop` and `main` must be plain text (for example
 commit, which copies the PR title, and a Conventional Commit title adds the
 change to the changelog again. The `pr-title` workflow enforces this.
 
+### Measuring recall
+
+`npm run eval:recall` runs 20 live questions from the tool's known weak
+areas: framework docs, error strings, industry reports, market statistics,
+vendor facts, and a reference control. For each question it checks whether a
+candidate matched the primary source (`found`) and whether triage opened it
+(`opened`). It also shows, per provider, how many questions only that provider
+answered. Run it before and after a provider or grading change. It uses about
+20-40 of the 100 daily You.com keyless queries, so it is not part of
+`npm test`. Set `GITHUB_TOKEN` to avoid the GitHub search rate limit.
+
+Result on 2026-11-17, no keyed engine set: found 17/20, opened 14/20. Without
+You.com (`YOUCOM=0`), found was 11/20; You.com alone found 6 of the questions.
+
 ## License
 
 MIT
