@@ -269,10 +269,18 @@ are done.
 
 ## General-web recall
 
-The default providers are keyless and focused: Wikipedia, OpenAlex, DOAJ,
-Hacker News, GitHub issues, Stack Overflow, and news feeds. They cover
-reference, academic, practitioner, bug-diagnosis, and recent-news questions,
-but not all general-web "how do I..." searches.
+The default providers are keyless: Wikipedia, OpenAlex, DOAJ, Hacker News,
+GitHub issues, Stack Overflow, news feeds, and You.com web search. The others
+cover reference, academic, practitioner, bug-diagnosis, and recent-news
+questions. You.com adds general-web "how do I..." recall.
+
+### You.com keyless search
+
+You.com's free Agents API needs no key and no account. It allows 100 queries a
+day per IP address ([You.com docs](https://you.com/docs/agents/mcp-server.md)).
+One research call can use two queries when the tool widens the search. After
+the cap, `youcom` shows under `unreachable:` and the other providers still
+answer. Set `YOUCOM=0` to turn it off.
 
 ### Recent news
 
@@ -291,25 +299,27 @@ used, and stories are kept only when their title matches the question.
 - Bing News and Google News search feeds are not used: both state that they are
   for personal, non-commercial use in a feed reader.
 
-Enable a general-web provider when you need broader recall:
+Enable another general-web provider when you need more recall:
 
 ```sh
-export MARGINALIA=1
-# Or configure one keyed provider:
-export GOOGLE_SEARCH_API_KEY=...
-export GOOGLE_SEARCH_CX=...
+export BRAVE_API_KEY=...   # or TAVILY_API_KEY, or SERPER_API_KEY
 ai-internet-search "how do I keep a status page realtime"
 ```
 
-Other supported keyed providers are `BRAVE_API_KEY`, `TAVILY_API_KEY`, and
-`SERPER_API_KEY`. The first available keyed provider is used in the order
-Brave, Tavily, Serper, then Google. Provider results enter the same tiered
-ranking; provider count is never treated as consensus.
+The first available keyed provider is used in the order Brave, Tavily,
+Serper, then Google. Provider results enter the same tiered ranking; provider
+count is never treated as consensus.
 
-`MARGINALIA=1` has a latency cost. On 2026-09-29, the shared public key timed
-out on every multi-term query that was tested, while single-term queries
-answered in about 1 second. A timed-out provider is reported under `failed`
-and is not retried, but it can still add up to 10 seconds to each search.
+Google Programmable Search (`GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX`) still
+works for existing keys. Google closed it to new customers and ends it on
+2027-01-01 ([Google notice](https://developers.google.com/custom-search/v1/overview)).
+
+`MARGINALIA=1` turns on the keyless Marginalia index. It has a latency cost. On
+2026-09-29, the shared public key timed out on every multi-term query that was
+tested, while single-term queries answered in about 1 second. On 2026-11-16 a
+single query timed out after 10 seconds. A timed-out provider is reported
+under `unreachable:` and is not retried, but it can still add up to 10
+seconds to each search.
 
 ## MCP and agent clients
 
@@ -321,8 +331,26 @@ npm install -g ai-internet-search
 
 The package provides `ai-internet-search` and `ai-internet-search-mcp`.
 
-Terminal agents can run the CLI directly. If a client prefers MCP, register
-the stdio server:
+### Agent skill
+
+The package also ships an [Agent Skills](https://agentskills.io) guide at
+`skills/ai-internet-search/SKILL.md`. It tells an agent when to run the tool
+and how to read its output. Link it once into `~/.agents/skills`, which
+Codex, Gemini CLI, OpenCode, Cursor, and GitHub Copilot read. Claude Code
+reads only `~/.claude/skills`, so link it there as well:
+
+```sh
+mkdir -p ~/.agents/skills ~/.claude/skills
+ln -sfn "$(npm root -g)/ai-internet-search/skills/ai-internet-search" ~/.agents/skills/ai-internet-search
+ln -sfn ~/.agents/skills/ai-internet-search ~/.claude/skills/ai-internet-search
+```
+
+The links follow `npm install -g ai-internet-search` upgrades.
+
+### MCP
+
+Terminal agents should run the CLI directly: MCP costs more tokens. If a
+client has no shell or prefers MCP, register the stdio server:
 
 ```sh
 claude mcp add --scope user ai-internet-search -- ai-internet-search-mcp

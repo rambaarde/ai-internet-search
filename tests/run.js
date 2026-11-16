@@ -321,6 +321,11 @@ is(kindsFor('state of the art rate limiting').includes('news'), false, '"state o
   // pick({}) === null above is the whole no-op contract: run() returns [] iff
   // pick() is null. The live API path (a real key present) is exercised only
   // where a key exists, like the network and render tests.
+  // You.com keyless search is ON by default (no key exists to gate it), so the
+  // off switch and the response mapping are the contract.
+  const { youcomEnabled } = require('../lib/providers/websearch');
+  is(youcomEnabled({}), true, 'You.com runs by default, with no key');
+  is(['0', 'false', 'OFF'].every((v) => !youcomEnabled({ YOUCOM: v })), true, 'YOUCOM=0/false/off turns You.com off');
 }
 
 // --- issue trackers and practitioner Q&A --------------------------------------
@@ -777,6 +782,28 @@ function finish() {
   } finally {
     globalThis.fetch = realFetch;
     if (realMarginalia === undefined) delete process.env.MARGINALIA; else process.env.MARGINALIA = realMarginalia;
+  }
+  // You.com keyless search: the request and the response mapping.
+  {
+    const { youcom } = require('../lib/providers/websearch');
+    const realFetch = globalThis.fetch;
+    let asked = '';
+    globalThis.fetch = async (url) => {
+      asked = url;
+      return { ok: true, json: async () => ({ results: { web: [
+        { url: 'https://a.test/x', title: 'A', description: 'd' },
+        { url: 'https://b.test/y' },
+      ] } }) };
+    };
+    try {
+      const r = await youcom('status page realtime');
+      has(asked, 'api.you.com/v1/agents/search', 'You.com is asked on its keyless Agents API');
+      has(asked, 'query=status%20page%20realtime', 'the query is URL-encoded');
+      is(r.map((c) => `${c.url}|${c.title}|${c.via}`).join(' '), 'https://a.test/x|A|youcom https://b.test/y||youcom',
+         'results.web maps to {url,title,via}; the provider later drops untitled rows');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   }
   // OpenAlex reports retractions; a retracted work must reach triage as such,
   // not as an ordinary DOI.
