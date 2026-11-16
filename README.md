@@ -321,8 +321,26 @@ npm install -g ai-internet-search
 
 The package provides `ai-internet-search` and `ai-internet-search-mcp`.
 
-Terminal agents can run the CLI directly. If a client prefers MCP, register
-the stdio server:
+### Agent skill
+
+The package also ships an [Agent Skills](https://agentskills.io) guide at
+`skills/ai-internet-search/SKILL.md`. It tells an agent when to run the tool
+and how to read its output. Link it once into `~/.agents/skills`, which
+Codex, Gemini CLI, OpenCode, Cursor, and GitHub Copilot read. Claude Code
+reads only `~/.claude/skills`, so link it there as well:
+
+```sh
+mkdir -p ~/.agents/skills ~/.claude/skills
+ln -sfn "$(npm root -g)/ai-internet-search/skills/ai-internet-search" ~/.agents/skills/ai-internet-search
+ln -sfn ~/.agents/skills/ai-internet-search ~/.claude/skills/ai-internet-search
+```
+
+The links follow `npm install -g ai-internet-search` upgrades.
+
+### MCP
+
+Terminal agents should run the CLI directly: MCP costs more tokens. If a
+client has no shell or prefers MCP, register the stdio server:
 
 ```sh
 claude mcp add --scope user ai-internet-search -- ai-internet-search-mcp
