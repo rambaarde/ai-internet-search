@@ -169,6 +169,25 @@ is(gradeSource('https://www.anthropic.com/engineering/x', { direct: true }).tier
    'a vendor page given directly is primary about itself');
 is(gradeSource('https://medium.com/@anthropic/x', { terms: ['medium'] }).tier, 4,
    'naming an aggregator does not promote it');
+// The subject's own site outranks blogs about it, but only to tier 2: an
+// exact-match domain is also an SEO tactic.
+is(gradeSource('https://metr.org/blog/study', { terms: ['metr', 'productivity'] }).why, "subject's own site",
+   'an unrecognised host named after a question term is the subject\'s own site');
+is(gradeSource('https://metr.org/blog/study', { terms: ['metr'] }).tier, 2, "the subject's own site is tier 2, not tier 1");
+is(gradeSource('https://metr.org/blog/study', { terms: ['react'] }).tier, 3, 'a host unrelated to the question stays unclassified');
+// An issue is first-hand only in the project the question is about.
+is(gradeSource('https://github.com/ANP77/intern-repo/issues/65', { terms: ['react', 'useeffect'] }).why,
+   'issue in an unrelated repository', 'an issue in a repository the question does not name drops to tier 3');
+is(gradeSource('https://github.com/prisma/prisma/issues/1', { terms: ['prisma', 'p1001'] }).tier, 2,
+   "an issue in the question's own project stays tier 2");
+is(gradeSource('https://github.com/vercel/next.js/issues/1', { terms: ['nextjs', 'hydration'] }).tier, 2,
+   'repository names match without punctuation (next.js = nextjs)');
+is(gradeSource('https://github.com/a/b/issues/1').tier, 2, 'with no question terms an issue keeps tier 2');
+is(gradeSource('https://github.com/wild-card-ai/agents-json', { terms: ['custom', 'search', 'json'] }).why,
+   'unrelated repository', 'a repository the question does not name drops to tier 3');
+is(gradeSource('https://developers.google.com/custom-search/v1/overview').tier, 1, 'a developers. subdomain is official documentation');
+is(gradeSource('https://dev.to/someone/post').tier, 4, 'dev.to is a content aggregator');
+is(gradeSource('https://x.substack.com/p/post').tier, 4, 'a substack subdomain is a content aggregator');
 
 // --- triage -----------------------------------------------------------------
 {
