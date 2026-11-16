@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.11.0...ai-internet-search-v0.12.0) (2026-11-16)
+
+
+### Features
+
+* **search:** run every configured keyed engine in parallel ([8e1a2e3](https://github.com/rambaarde/ai-internet-search/commit/8e1a2e3e001b8c40bd99f999f5beda4b32c314aa))
+
+
+### Bug Fixes
+
+* **sources:** rank the subject's own site above unrelated GitHub pages ([73beb21](https://github.com/rambaarde/ai-internet-search/commit/73beb218b9e64b894f6ebabe781169da6693da76))
+
 ## [0.11.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.10.0...ai-internet-search-v0.11.0) (2026-11-16)
 
 
