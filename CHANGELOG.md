@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.10.0...ai-internet-search-v0.11.0) (2026-11-16)
+
+
+### Features
+
+* **search:** add keyless You.com general-web search ([d3c50d4](https://github.com/rambaarde/ai-internet-search/commit/d3c50d492ea639a46330e18d1a2c2c9fe140906a))
+* **skill:** ship the agent skill for every harness ([abc18e6](https://github.com/rambaarde/ai-internet-search/commit/abc18e6d0461688aa68b21c5bc317f8be1fe2989))
+
 ## [0.10.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.9.0...ai-internet-search-v0.10.0) (2026-10-27)
 
 
