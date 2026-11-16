@@ -63,9 +63,11 @@ what it could not establish.
 The built-in web search gives **breadth**: developer blogs, vendor docs, older
 news, verbatim error strings, and obscure pages. By default this tool uses
 key-free providers: Wikipedia (any language), OpenAlex, DOAJ, Hacker News,
-GitHub issues, Stack Overflow, and the news feeds of 17 tech and games outlets
-(plus Marginalia when `MARGINALIA=1`). Its recall is therefore lower than a full
-web index. An empty result from it does not mean the answer does not exist.
+GitHub issues, Stack Overflow, the news feeds of 17 tech and games outlets, and
+(version 0.11.0 and later) You.com keyless web search, 100 queries a day per IP
+address. Its recall is still lower than a full web index. An empty result from
+it does not mean the answer does not exist. If `unreachable:` lists `youcom`,
+the daily cap may have been reached.
 
 For recent events (version 0.9.0 and later), put a news cue in the question:
 a year (`2026`), or a word such as `latest`, `announced`, `released`,
