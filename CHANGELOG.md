@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.12.0...ai-internet-search-v0.13.0) (2026-11-18)
+
+
+### Features
+
+* **assess:** do not count copied pages as corroboration ([2244a78](https://github.com/rambaarde/ai-internet-search/commit/2244a78f322aeaad9b25688d3900ffcdc0fa67c1))
+
 ## [0.12.0](https://github.com/rambaarde/ai-internet-search/compare/ai-internet-search-v0.11.0...ai-internet-search-v0.12.0) (2026-11-16)
 
 
