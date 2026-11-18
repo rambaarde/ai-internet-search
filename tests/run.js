@@ -554,6 +554,45 @@ is(looksRelevant('Cambio clim\u00e1tico', ['cambio', 'climatico']), 'true',
   is(grade([{ tier: 1, host: 'a', read: false, claims: [] }], []).level, 'none',
      'nothing readable is graded none, not assumed');
 
+  // A copied page is not corroboration: two hosts carrying one story are one source.
+  const { markCopies, canonicalUrl } = require('../lib/independence');
+  const story = 'The Federal Reserve held its benchmark interest rate steady on Wednesday, citing '
+    + 'persistent inflation in services and a labor market that has cooled only gradually since spring. '
+    + 'Officials said they would need greater confidence that price growth is moving toward two percent '
+    + 'before cutting, and several members noted that tariffs had raised goods prices more than expected.';
+  const page = (host, tier, text) => ({ url: `https://${host}/news/fed`, host, tier, read: true, text, claims: [{ text: 'x' }] });
+  const wire = markCopies([
+    page('example-news.com', 1, `Menu Home World Business. WASHINGTON (Reuters) - ${story} Related: markets wrap.`),
+    page('other-paper.org', 1, `Subscribe now. Top stories. WASHINGTON (Reuters) - ${story.slice(0, 200)} Sign up for alerts. Comments closed.`),
+  ]);
+  is(wire[1].copyKind, 'wire', 'a wire story republished on another host is marked as a wire copy');
+  is(grade(wire, []).level, 'moderate', 'a wire copy on a second tier-1 host does not raise certainty to high');
+  has(grade(wire, []).why, '1 copied source(s) not counted', 'certainty says a copy was not counted');
+
+  const body = markCopies([
+    page('docs-mirror.net', 2, `Mirror banner. ${story} Footer links and a long list of mirror navigation entries.`),
+    page('origin.gov', 1, story),
+  ]);
+  is(body[0].copyOf, 'https://origin.gov/news/fed', 'the more authoritative page is kept as the original, even when read later');
+  is(body[0].copyKind, 'body', 'a page containing another page\'s text is marked as a body copy');
+
+  const independent = markCopies([
+    page('federalreserve.gov', 1, story),
+    page('bls.gov', 2, 'Consumer prices for services rose 0.4 percent in the latest month, while shelter costs accounted '
+      + 'for over half of the monthly increase in all items less food and energy. The goods index was unchanged over '
+      + 'the period, and energy prices declined after rising in each of the previous two months of the year.'),
+  ]);
+  is(independent.some((s) => s.copyOf), false, 'pages on one subject with different text are not marked as copies');
+  is(grade(independent, []).level, 'high', 'independent authoritative pages still corroborate');
+  const { hasAuthoritativeEvidence } = require('../lib/decisions');
+  is(hasAuthoritativeEvidence(markCopies([page('vendor-a.com', 2, story), page('vendor-b.com', 2, `Reposted: ${story}`)])), false,
+     'a tier-2 page and its copy on another host do not pass the answer gate');
+
+  is(canonicalUrl('http://www.Example.com/a/?utm_source=x&b=2&a=1'), canonicalUrl('https://example.com/a?a=1&b=2'),
+     'tracking parameters, www., scheme and a trailing slash do not make a URL a different page');
+  is(canonicalUrl('https://example.com/a?id=1') === canonicalUrl('https://example.com/a?id=2'), false,
+     'a meaningful query parameter keeps two URLs distinct');
+
   // A gap must name a SHORT next query: the covered subject plus the gap term.
   // Appending the term to the whole query recreates the long query that
   // match-every-term engines answered with nothing.
