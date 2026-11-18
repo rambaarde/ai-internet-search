@@ -142,6 +142,16 @@ source, or independent corroboration from two tier-2 sources on different
 hosts. A moderate grade from one secondary source is therefore still escalated
 for review.
 
+A copy is not corroboration. When a read page repeats another read page (the
+same canonical URL, the same wire-service story, or 70% or more of its text),
+the page gets `copyOf` and `copyKind` (`url`, `wire`, `body`). It is then not
+counted as a second source for `certainty` or for the `answer` decision. The
+CLI shows the copy in the `why` column of `sources`, and `certainty.why`
+states how many copies were not counted. Search results are also
+deduplicated by canonical URL, so a `utm_` or `www.` variant of a page is not
+opened twice. This check is adapted from
+[hyperresearch](https://github.com/jordan-gibbs/hyperresearch) (MIT).
+
 `evidence_sufficient` answers five independent checks in one pass: a source
 was readable, the support is authoritative, the sources agree, every query term
 is covered, and a specific question was asked. Its `probability` is the share
